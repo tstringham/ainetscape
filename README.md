@@ -1,72 +1,68 @@
-# AI Netscape Composer
+# AI Netscape
 
-A loving parody of Netscape Composer with one anachronistic twist: an "AI Composer" toolbar button that generates state-of-the-art modern websites via Claude.
-
-Built as a follow-up to an a16z application for Marc Andreessen.
+A recreation of a 1997 HTML composer with one anachronistic addition: an
+**AI Composer** button that generates complete, state-of-the-art websites.
 
 ## Stack
 
-- **Frontend:** Single static `index.html` (no build step, no framework)
-- **Backend:** One Vercel serverless function (`/api/generate`) that proxies to Anthropic
-- **Hosting:** Vercel
-- **Domain:** AINetscape.com (registered at GoDaddy)
+| Layer | Choice |
+|---|---|
+| Frontend | Single static `index.html` — no framework, no build step |
+| Backend | One Vercel serverless function, `/api/generate` |
+| Rate limiting | Upstash Redis (durable, global) with an in-memory fallback |
+| Logging | Optional — MongoDB Atlas, gated on `MONGODB_URI` |
+| Hosting | Vercel |
+| Model | `claude-sonnet-4-6` |
 
 ## Project layout
 
 ```
 ainetscape/
-├── index.html         # The whole UI: chrome, editor, dialogs, AI button
+├── index.html            # The whole UI: chrome, editor, dialogs, AI Composer
 ├── api/
-│   └── generate.js    # Anthropic proxy (keeps API key server-side)
-├── vercel.json        # Trivial Vercel config
+│   ├── generate.js       # Anthropic proxy: system prompt, rate limit, cache
+│   └── _db.js            # Optional Mongo logging helper (loaded only if enabled)
+├── public/               # favicon.ico/.svg, apple-touch-icon.png, og-image.png
+├── scripts/
+│   ├── build_favicons.py # Generates the favicons (needs Pillow)
+│   ├── og-template.html  # 1200x630 social-card source
+│   └── build_og.mjs      # Renders og-template.html -> public/og-image.png
+├── vercel.json           # Security headers, function config
+├── package.json
+├── .env.example
+├── DEPLOYMENT.md         # Step-by-step deploy guide
 └── README.md
 ```
 
-## Deploy (first time)
+## Architecture notes
+
+- The Anthropic key **and the system prompt** both live server-side in
+  `/api/generate.js`. The browser only ever sends a brief — it cannot supply
+  its own system prompt.
+- `index.html` is intentionally a single hand-written file. No bundler.
+- AI generation runs through a triage step: the model first classifies the
+  brief (`build` / `warn_*` / `refuse_*`); the client renders the result.
+
+## Local development
 
 ```bash
-cd ~/Projects/ainetscape
-
-# 1. Git
-git init
-git add .
-git commit -m "Initial commit: AI Netscape Composer"
-gh repo create ainetscape --public --source=. --push
-
-# 2. Vercel
-vercel link        # creates the project
-vercel env add ANTHROPIC_API_KEY production   # paste key when prompted
-vercel --prod      # ship it
-
-# 3. Domain (after AINetscape.com is yours at GoDaddy)
-vercel domains add ainetscape.com
-vercel domains add www.ainetscape.com
-# Vercel will show you the exact DNS records to add at GoDaddy:
-#   A      @     76.76.21.21
-#   CNAME  www   cname.vercel-dns.com
-# DNS propagates in 5–60 min.
+npm install
+vercel link            # first time only
+vercel env pull .env.local
+vercel dev             # → http://localhost:3000
 ```
 
-## Deploy (subsequent changes)
+The AI Composer button needs `ANTHROPIC_API_KEY` available locally (via
+`vercel env pull`) to work end-to-end.
+
+## Building assets
 
 ```bash
-git add . && git commit -m "..." && git push
-# Vercel auto-deploys from GitHub on push to main
+pip install pillow
+npm install && npx playwright install chromium
+npm run build:assets   # favicons + OG card → public/
 ```
 
-Or just `vercel --prod` for an immediate push without git.
+## Deployment
 
-## Local dev
-
-```bash
-vercel dev
-# → http://localhost:3000
-```
-
-This runs the serverless function locally so the AI button works in dev.
-
-## Notes
-
-- The Anthropic API key lives only in Vercel's env vars — never in the repo, never in the bundle.
-- `/api/generate.js` caps brief length at 4000 chars so the endpoint can't be weaponized.
-- Pinned to `claude-sonnet-4-5-20250929` — fast and cheap enough that a few hundred Marc-curious visitors won't matter.
+See [DEPLOYMENT.md](DEPLOYMENT.md).

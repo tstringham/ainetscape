@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OG card template</title>
+<style>
+  /* Exactly 1200x630. Rendered to public/og-image.png by build_og.mjs. */
+  :root {
+    --face: #c0c0c0; --face-lt: #dfdfdf;
+    --hi: #ffffff; --sh: #808080; --sh-dk: #404040;
+    --navy: #000080;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 1200px; height: 630px; overflow: hidden;
+    background: #008080;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+  }
+  .stage {
+    width: 1200px; height: 630px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 30px;
+    position: relative;
+  }
+
+  /* ---- The window ---- */
+  .window {
+    width: 880px;
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    box-shadow: 4px 5px 0 rgba(0,0,0,0.28);
+  }
+  .titlebar {
+    height: 28px; background: var(--navy); color: #fff;
+    display: flex; align-items: center; padding: 0 4px 0 7px;
+    font-size: 14px; font-weight: bold;
+    font-family: "MS Sans Serif", Geneva, Tahoma, sans-serif;
+  }
+  .titlebar .t { flex: 1; }
+  .titlebar .doc { font-weight: normal; }
+  .tb-btn {
+    width: 22px; height: 19px; margin-left: 3px;
+    background: var(--face);
+    border: 1px solid; border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    color: #000; font-size: 11px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .menubar {
+    display: flex; gap: 14px; padding: 4px 8px;
+    background: var(--face); border-bottom: 1px solid var(--sh);
+    font-size: 13px; font-family: "MS Sans Serif", Geneva, Tahoma, sans-serif;
+  }
+  .menubar u { text-decoration: underline; }
+
+  .toolbar {
+    display: flex; align-items: stretch; gap: 3px;
+    padding: 7px; background: var(--face);
+    border-bottom: 1px solid var(--sh);
+  }
+  .tool {
+    min-width: 62px; padding: 6px 9px;
+    background: var(--face);
+    border: 2px solid; border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font-size: 12px; font-family: "MS Sans Serif", Geneva, Tahoma, sans-serif;
+  }
+  .tool .ico { font-size: 17px; line-height: 1; }
+  .sep { width: 2px; margin: 3px 5px; background: var(--sh); border-right: 1px solid var(--hi); }
+
+  /* THE button */
+  .ai {
+    background: linear-gradient(180deg, #ff00ff 0%, #00ffff 100%);
+    border-color: #ffff00 #ff00ff #ff00ff #ffff00;
+    box-shadow: 0 0 22px 6px rgba(0,255,255,0.85);
+    min-width: 96px;
+  }
+  .ai .lbl { font-weight: bold; text-shadow: 1px 1px 0 #fff; }
+
+  /* ---- Editor slice ---- */
+  .editor {
+    background: #fff; margin: 2px;
+    border: 2px solid; border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    padding: 26px 34px 30px;
+    font-family: "Times New Roman", Times, serif;
+  }
+  .editor h1 {
+    text-align: center; font-size: 46px; font-weight: bold;
+    letter-spacing: -0.5px;
+  }
+  .editor h1 .r { color: #ff0000; }
+  .editor h1 .b { color: #0000ff; }
+  .editor hr {
+    border: 0; border-top: 2px solid #888; border-bottom: 2px solid #fff;
+    margin: 16px 0;
+  }
+  .editor p { font-size: 21px; color: #000; }
+  .editor .grn { color: #008000; font-style: italic; }
+  .editor .h2 { color: #800080; font-size: 27px; font-weight: bold; margin-top: 14px; }
+
+  /* ---- Tagline + domain ---- */
+  .tagline {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #fff; font-size: 52px; font-weight: 700;
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  }
+  .domain {
+    position: absolute; right: 34px; bottom: 26px;
+    color: #d6f0f0; font-size: 17px; font-weight: bold;
+    letter-spacing: 3px;
+    font-family: "MS Sans Serif", Geneva, Tahoma, sans-serif;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <div class="window">
+    <div class="titlebar">
+      <span class="t">AI Netscape - [<span class="doc">Untitled</span>]</span>
+      <span class="tb-btn">_</span>
+      <span class="tb-btn">&#9633;</span>
+      <span class="tb-btn">&#10005;</span>
+    </div>
+    <div class="menubar">
+      <span><u>F</u>ile</span><span><u>E</u>dit</span><span><u>V</u>iew</span>
+      <span><u>I</u>nsert</span><span>F<u>o</u>rmat</span><span><u>H</u>elp</span>
+    </div>
+    <div class="toolbar">
+      <div class="tool"><span class="ico">&#128196;</span><span>New</span></div>
+      <div class="tool"><span class="ico">&#128193;</span><span>Open</span></div>
+      <div class="tool"><span class="ico">&#128190;</span><span>Save</span></div>
+      <div class="sep"></div>
+      <div class="tool"><span class="ico">&#128065;</span><span>Preview</span></div>
+      <div class="tool"><span class="ico">&lt;/&gt;</span><span>Source</span></div>
+      <div class="sep"></div>
+      <div class="tool ai"><span class="ico">&#10022;</span><span class="lbl">AI Composer</span></div>
+    </div>
+    <div class="editor">
+      <h1><span class="r">Welcome</span> to <span class="b">My Home Page!</span></h1>
+      <hr>
+      <p>This is my brand new web page, made with <b>AI Netscape</b> and the
+      <span class="grn">World Wide Web</span>.</p>
+      <div class="h2">My Interests</div>
+    </div>
+  </div>
+
+  <div class="tagline">1997 chrome. 2026 AI.</div>
+  <div class="domain">AINETSCAPE.COM</div>
+
+</div>
+</body>
+</html>

@@ -2,7 +2,49 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AI Netscape</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+<title>AI Netscape — Composer for the Information Superhighway</title>
+
+<!-- Discovery -->
+<meta name="description" content="A loving recreation of Netscape Composer (1997) with one anachronistic twist: an AI button that builds state-of-the-art websites. Built as a love letter to the early web.">
+<meta name="author" content="AI Netscape">
+<meta name="theme-color" content="#008080">
+
+<!-- Social cards -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ainetscape.com">
+<meta property="og:title" content="AI Netscape — Composer for the Information Superhighway">
+<meta property="og:description" content="1997 chrome. 2026 AI. One button bridges 29 years.">
+<meta property="og:image" content="https://ainetscape.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AI Netscape">
+<meta name="twitter:description" content="1997 chrome. 2026 AI. One button bridges 29 years.">
+<meta name="twitter:image" content="https://ainetscape.com/og-image.png">
+
+<!-- Favicons -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+<!-- Easter egg for view-source visitors -->
+<!--
+     ╔══════════════════════════════════════════════════════════╗
+     ║                                                          ║
+     ║   You viewed source. Respect.                            ║
+     ║                                                          ║
+     ║   This page is hand-written HTML. No framework. No       ║
+     ║   build step. The WYSIWYG engine is contentEditable      ║
+     ║   plus document.execCommand. The AI button is a single   ║
+     ║   fetch to /api/generate. That's the whole architecture. ║
+     ║                                                          ║
+     ║   Questions? webmaster@ainetscape.com                    ║
+     ║                                                          ║
+     ╚══════════════════════════════════════════════════════════╝
+-->
+
 <style>
   /* ============================================================
      Authentic Motif / Win95-era chrome.
@@ -321,6 +363,35 @@
   }
   .status-pane.flex { flex: 1; }
 
+  /* The 56k upgrade button. A 1997 user solved bandwidth problems by
+     upgrading their modem; this status-bar control mirrors that. */
+  .status-modem {
+    background: var(--face);
+    border: 1px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    cursor: pointer;
+    user-select: none;
+    font-family: "MS Sans Serif", "Geneva", "Tahoma", sans-serif;
+    font-size: 11px;
+    color: var(--text);
+    padding: 1px 6px;
+    height: 16px;
+    white-space: nowrap;
+  }
+  .status-modem:hover { background: var(--face-lt); }
+  .status-modem:active { border-color: var(--hi) var(--sh) var(--sh) var(--hi); }
+  #modem-cta {
+    color: var(--select); /* navy — looks like a vintage hyperlink */
+    text-decoration: underline;
+    margin-left: 4px;
+  }
+  .status-modem.upgraded #modem-cta { display: none; }
+  .status-modem.upgraded #modem-speed::after {
+    content: " ✓";
+    color: #008000;
+    font-weight: bold;
+  }
+
   /* ---- Modal dialogs (Motif style) ---- */
   .modal-backdrop {
     display: none;
@@ -425,6 +496,60 @@
 
   .ai-status { font-size: 11px; color: var(--sh-dk); min-height: 16px; }
 
+  /* AI loading state — modem handshake choreography */
+  .ai-loading { display: flex; flex-direction: column; gap: 10px; padding: 6px 2px; }
+  .ai-loading-row { display: flex; align-items: center; font-size: 12px; }
+  .ai-loading-line { font-weight: bold; }
+  .ai-progress {
+    height: 16px;
+    border: 1px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    background: white;
+    padding: 2px;
+  }
+  .ai-progress-bar {
+    height: 100%;
+    width: 0;
+    background: var(--title-active);
+    background-image: linear-gradient(90deg, var(--title-active) 0 9px, transparent 9px 11px);
+    background-size: 11px 100%;
+    transition: width 0.45s linear;
+  }
+
+  /* Warning / refusal alternative buttons */
+  .alt-suggestion {
+    display: block;
+    width: 100%;
+    margin-bottom: 4px;
+    padding: 6px 10px;
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    font-family: "MS Sans Serif", sans-serif;
+    font-size: 11px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .alt-suggestion:hover { background: var(--face-lt); }
+  .alt-suggestion:active { border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk); }
+
+  /* Onboarding hint bubble */
+  .ui-hint {
+    position: fixed;
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    padding: 5px 9px;
+    font-size: 11px;
+    z-index: 50;
+    box-shadow: 2px 2px 0 var(--sh-dk);
+    pointer-events: none;
+  }
+  @keyframes hintWiggle {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(-4px); }
+  }
+
   /* Toast pseudo-popup for "saved" etc */
   .toast {
     position: fixed;
@@ -437,8 +562,22 @@
     z-index: 200;
     display: none;
     box-shadow: 2px 2px 0 var(--sh-dk);
+    max-width: calc(100vw - 48px);
   }
   .toast.show { display: block; }
+
+  /* Small screens: drop the tag-path pane so the 56k button keeps its room */
+  @media (max-width: 640px) {
+    #status-tags { display: none; }
+    #status-msg { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .tbtn.ai-btn { animation: none; box-shadow: 0 0 6px 2px rgba(0, 255, 255, 0.8); }
+    #editor blink { animation: none; }
+    .ai-progress-bar { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -690,7 +829,9 @@
   <div class="statusbar">
     <div class="status-pane flex" id="status-msg">Document: Done</div>
     <div class="status-pane" id="status-tags">&lt;body&gt;</div>
-    <div class="status-pane">28.8 kbps</div>
+    <button class="status-pane status-modem" id="modem-upgrade" title="Upgrade your connection">
+      <span id="modem-speed">28.8 kbps</span><span id="modem-cta">— upgrade to 56k?</span>
+    </button>
     <div class="status-pane" id="status-clock">--:--</div>
   </div>
 </div>
@@ -806,7 +947,7 @@
   <div class="dialog ai-dialog" style="width: 560px;">
     <div class="titlebar">
       <span class="title">AI Composer ✦ The Future, Today (Beta)</span>
-      <div class="titlebar-btns"><button class="titlebar-btn" data-close>✕</button></div>
+      <div class="titlebar-btns"><button class="titlebar-btn" data-close-ai>✕</button></div>
     </div>
     <div class="dialog-body">
       <div style="font-size:11px;">
@@ -828,7 +969,7 @@
     </div>
     <div class="dialog-footer">
       <button class="dlg-btn default" id="ai-go">Generate</button>
-      <button class="dlg-btn" data-close>Cancel</button>
+      <button class="dlg-btn" id="ai-prompt-cancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -855,165 +996,184 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  // ============================================================
-  // Composer-era WYSIWYG using document.execCommand. Yes, that's
-  // exactly the brutal technology we want. It even still works.
-  // ============================================================
-  const editor = document.getElementById('editor');
-  const sourceView = document.getElementById('source-view');
-  const statusMsg = document.getElementById('status-msg');
-  const statusTags = document.getElementById('status-tags');
-  const statusClock = document.getElementById('status-clock');
-  const docTitle = document.getElementById('doc-title');
-  const toast = document.getElementById('toast');
+"use strict";
+// ============================================================
+// Composer-era WYSIWYG using document.execCommand. Yes, that's
+// exactly the brutal technology we want. It even still works.
+// ============================================================
 
-  let savedSelection = null;
-  let inSourceMode = false;
-  let currentHTML = ''; // backing store
+// ---- Storage helpers (never throw — Safari private mode etc.) ----
+function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+function ssGet(k) { try { return sessionStorage.getItem(k); } catch (_) { return null; } }
+function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (_) {} }
 
-  // ---- Selection persistence (for dialogs) ----
-  function saveSelection() {
-    const sel = window.getSelection();
-    if (sel.rangeCount > 0) savedSelection = sel.getRangeAt(0).cloneRange();
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function escapeAttr(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+const editor = document.getElementById('editor');
+const sourceView = document.getElementById('source-view');
+const statusMsg = document.getElementById('status-msg');
+const statusTags = document.getElementById('status-tags');
+const statusClock = document.getElementById('status-clock');
+const docTitle = document.getElementById('doc-title');
+const toast = document.getElementById('toast');
+
+let savedSelection = null;
+let inSourceMode = false;
+
+const reduceMotion = (function () {
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  catch (_) { return false; }
+})();
+
+// ---- Selection persistence (for dialogs) ----
+function saveSelection() {
+  const sel = window.getSelection();
+  if (sel.rangeCount > 0) savedSelection = sel.getRangeAt(0).cloneRange();
+}
+function restoreSelection() {
+  if (!savedSelection) return;
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(savedSelection);
+}
+
+// ---- Status clock ----
+function tickClock() {
+  const d = new Date();
+  statusClock.textContent =
+    String(d.getHours()).padStart(2,'0') + ':' +
+    String(d.getMinutes()).padStart(2,'0');
+}
+setInterval(tickClock, 1000); tickClock();
+
+// ---- Status: which tags surround the caret ----
+function updateTagPath() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) { statusTags.textContent = '<body>'; return; }
+  let node = sel.getRangeAt(0).startContainer;
+  const path = [];
+  while (node && node !== editor && path.length < 6) {
+    if (node.nodeType === 1) path.unshift('<' + node.tagName.toLowerCase() + '>');
+    node = node.parentNode;
   }
-  function restoreSelection() {
-    if (!savedSelection) return;
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(savedSelection);
+  statusTags.textContent = '<body>' + path.join('');
+}
+editor.addEventListener('keyup', updateTagPath);
+editor.addEventListener('mouseup', updateTagPath);
+
+// ---- Status: short-lived message ----
+function setStatus(msg) {
+  statusMsg.textContent = msg;
+  clearTimeout(setStatus._t);
+  setStatus._t = setTimeout(() => statusMsg.textContent = 'Document: Done', 3500);
+}
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toast.classList.remove('show'), 2600);
+}
+
+// ---- Formatting toolbar ----
+function exec(cmd, val) {
+  editor.focus();
+  try { document.execCommand(cmd, false, val == null ? null : val); } catch (_) {}
+  updateTagPath();
+}
+
+document.querySelectorAll('.fbtn[data-cmd]').forEach(b => {
+  b.addEventListener('mousedown', e => e.preventDefault()); // keep selection
+  b.addEventListener('click', () => exec(b.dataset.cmd));
+});
+
+document.getElementById('paragraph-style').addEventListener('change', e => {
+  exec('formatBlock', e.target.value);
+  e.target.blur();
+});
+document.getElementById('font-face').addEventListener('change', e => {
+  if (e.target.value) exec('fontName', e.target.value);
+  e.target.blur();
+});
+document.getElementById('font-size').addEventListener('change', e => {
+  exec('fontSize', e.target.value);
+  e.target.blur();
+});
+document.getElementById('font-color').addEventListener('input', e => {
+  exec('foreColor', e.target.value);
+});
+
+// ---- Toolbar buttons ----
+document.getElementById('main-toolbar').addEventListener('click', e => {
+  const btn = e.target.closest('.tbtn');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  switch (action) {
+    case 'new':     newDoc(); break;
+    case 'open':    openDoc(); break;
+    case 'save':    saveDoc(); break;
+    case 'publish': showAlert('Publish to Web', 'Connecting to FTP server...\n\nCould not connect to publish target. (Service temporarily offline.)'); break;
+    case 'preview': preview(); break;
+    case 'source':  toggleSource(); break;
+    case 'link':    saveSelection(); openDialog('dlg-link'); break;
+    case 'anchor':  insertAnchor(); break;
+    case 'image':   saveSelection(); openDialog('dlg-image'); break;
+    case 'hline':   exec('insertHorizontalRule'); break;
+    case 'table':   saveSelection(); openDialog('dlg-table'); break;
+    case 'spell':   showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)'); break;
+    case 'ai':      openDialog('dlg-ai'); { const p = document.getElementById('ai-prompt'); if (p) p.focus(); } break;
   }
+});
 
-  // ---- Status clock ----
-  function tickClock() {
-    const d = new Date();
-    statusClock.textContent =
-      String(d.getHours()).padStart(2,'0') + ':' +
-      String(d.getMinutes()).padStart(2,'0');
-  }
-  setInterval(tickClock, 1000); tickClock();
-
-  // ---- Status: which tags surround the caret ----
-  function updateTagPath() {
-    const sel = window.getSelection();
-    if (!sel.rangeCount) { statusTags.textContent = '<body>'; return; }
-    let node = sel.getRangeAt(0).startContainer;
-    const path = [];
-    while (node && node !== editor && path.length < 6) {
-      if (node.nodeType === 1) path.unshift('<' + node.tagName.toLowerCase() + '>');
-      node = node.parentNode;
-    }
-    statusTags.textContent = '<body>' + path.join('');
-  }
-  editor.addEventListener('keyup', updateTagPath);
-  editor.addEventListener('mouseup', updateTagPath);
-
-  // ---- Status: short-lived message ----
-  function setStatus(msg) {
-    statusMsg.textContent = msg;
-    clearTimeout(setStatus._t);
-    setStatus._t = setTimeout(() => statusMsg.textContent = 'Document: Done', 3500);
-  }
-
-  function showToast(msg) {
-    toast.textContent = msg;
-    toast.classList.add('show');
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => toast.classList.remove('show'), 2200);
-  }
-
-  // ---- Formatting toolbar ----
-  function exec(cmd, val=null) {
-    editor.focus();
-    document.execCommand(cmd, false, val);
-    updateTagPath();
-  }
-
-  document.querySelectorAll('.fbtn[data-cmd]').forEach(b => {
-    b.addEventListener('mousedown', e => e.preventDefault()); // keep selection
-    b.addEventListener('click', () => exec(b.dataset.cmd));
-  });
-
-  document.getElementById('paragraph-style').addEventListener('change', e => {
-    exec('formatBlock', e.target.value);
-    e.target.blur();
-  });
-  document.getElementById('font-face').addEventListener('change', e => {
-    if (e.target.value) exec('fontName', e.target.value);
-    e.target.blur();
-  });
-  document.getElementById('font-size').addEventListener('change', e => {
-    exec('fontSize', e.target.value);
-    e.target.blur();
-  });
-  document.getElementById('font-color').addEventListener('input', e => {
-    exec('foreColor', e.target.value);
-  });
-
-  // ---- Toolbar buttons ----
-  document.getElementById('main-toolbar').addEventListener('click', e => {
-    const btn = e.target.closest('.tbtn');
-    if (!btn) return;
-    const action = btn.dataset.action;
-    switch (action) {
-      case 'new':     newDoc(); break;
-      case 'open':    openDoc(); break;
-      case 'save':    saveDoc(); break;
-      case 'publish': showAlert('Publish to Web', 'Connecting to FTP server...\n\nCould not connect to publish target. (Service temporarily offline.)'); break;
-      case 'preview': preview(); break;
-      case 'source':  toggleSource(); break;
-      case 'link':    saveSelection(); openDialog('dlg-link'); break;
-      case 'anchor':  insertAnchor(); break;
-      case 'image':   saveSelection(); openDialog('dlg-image'); break;
-      case 'hline':   exec('insertHorizontalRule'); break;
-      case 'table':   saveSelection(); openDialog('dlg-table'); break;
-      case 'spell':   showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)'); break;
-      case 'ai':      openDialog('dlg-ai'); document.getElementById('ai-prompt').focus(); break;
-    }
-  });
-
-  // ---- File ops ----
-  function newDoc() {
-    if (!confirm('Discard current document and start a new one?')) return;
-    editor.innerHTML = '<p><br></p>';
-    docTitle.textContent = 'Untitled';
-    setStatus('New document created.');
-  }
-  function saveDoc() {
-    const title = prompt('Page title:', docTitle.textContent) || docTitle.textContent;
-    docTitle.textContent = title;
-    const html = wrapAsFullPage(editor.innerHTML, title);
-    const blob = new Blob([html], {type: 'text/html'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = (title || 'index') + '.htm';
-    a.click();
-    URL.revokeObjectURL(a.href);
-    showToast('Saved as ' + a.download);
-  }
-  function openDoc() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.htm,.html,text/html';
-    input.onchange = () => {
-      const f = input.files[0];
-      if (!f) return;
-      const r = new FileReader();
-      r.onload = () => {
-        // Strip out everything outside <body> if it's a full page, else use as-is.
-        const txt = r.result;
-        const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(txt);
-        editor.innerHTML = body ? body[1] : txt;
-        const t = /<title>([\s\S]*?)<\/title>/i.exec(txt);
-        if (t) docTitle.textContent = t[1].trim();
-        setStatus('Opened ' + f.name);
-      };
-      r.readAsText(f);
+// ---- File ops ----
+function newDoc() {
+  if (!confirm('Discard current document and start a new one?')) return;
+  editor.innerHTML = '<p><br></p>';
+  docTitle.textContent = 'Untitled';
+  setStatus('New document created.');
+}
+function saveDoc() {
+  const title = prompt('Page title:', docTitle.textContent) || docTitle.textContent;
+  docTitle.textContent = title;
+  const html = wrapAsFullPage(editor.innerHTML, title);
+  const blob = new Blob([html], {type: 'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (title || 'index') + '.htm';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Saved as ' + a.download);
+}
+function openDoc() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.htm,.html,text/html';
+  input.onchange = () => {
+    const f = input.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      // Strip out everything outside <body> if it's a full page, else use as-is.
+      const txt = r.result;
+      const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(txt);
+      editor.innerHTML = body ? body[1] : txt;
+      const t = /<title>([\s\S]*?)<\/title>/i.exec(txt);
+      if (t) docTitle.textContent = t[1].trim();
+      setStatus('Opened ' + f.name);
     };
-    input.click();
-  }
+    r.readAsText(f);
+  };
+  input.click();
+}
 
-  function wrapAsFullPage(bodyHTML, title) {
-    return `<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+function wrapAsFullPage(bodyHTML, title) {
+  return `<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
 <HTML>
 <HEAD>
 <TITLE>${escapeHTML(title || 'Untitled')}</TITLE>
@@ -1024,229 +1184,802 @@
 ${bodyHTML}
 </BODY>
 </HTML>`;
+}
+
+function preview() {
+  const html = wrapAsFullPage(editor.innerHTML, docTitle.textContent);
+  const w = window.open('', '_blank');
+  if (!w) {
+    showAlert('Preview', 'The preview window could not be opened.\n\nPlease allow pop-up windows for this site and try again.');
+    return;
   }
-  function escapeHTML(s) {
-    return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+function toggleSource() {
+  if (!inSourceMode) {
+    sourceView.value = formatHTML(editor.innerHTML);
+    editor.parentElement.style.display = 'none';
+    sourceView.style.display = 'block';
+    sourceView.focus();
+    inSourceMode = true;
+    setStatus('Viewing HTML source.');
+  } else {
+    editor.innerHTML = sourceView.value;
+    editor.parentElement.style.display = 'block';
+    sourceView.style.display = 'none';
+    inSourceMode = false;
+    setStatus('Returned to WYSIWYG.');
+  }
+}
+
+// Quick & dirty pretty printer to look like Composer-saved HTML
+function formatHTML(html) {
+  let s = html.replace(/></g, '>\n<');
+  let depth = 0, out = '';
+  s.split('\n').forEach(line => {
+    const open = /^<[^!/?][^>]*[^/]>$/.test(line.trim()) && !/^<(br|hr|img|input|meta|link)/i.test(line.trim());
+    const close = /^<\//.test(line.trim());
+    if (close) depth = Math.max(0, depth - 1);
+    out += '  '.repeat(depth) + line.trim() + '\n';
+    if (open) depth++;
+  });
+  return out.trim();
+}
+
+// ---- Dialog open/close ----
+function openDialog(id) { document.getElementById(id).classList.add('open'); }
+function closeDialog(el) {
+  const d = el.closest('.modal-backdrop');
+  if (d) d.classList.remove('open');
+}
+document.querySelectorAll('[data-close]').forEach(el =>
+  el.addEventListener('click', () => closeDialog(el))
+);
+document.querySelectorAll('.modal-backdrop').forEach(bg => {
+  bg.addEventListener('click', e => {
+    if (e.target !== bg) return;
+    if (bg.id === 'dlg-ai') closeAIDialog();
+    else bg.classList.remove('open');
+  });
+});
+
+// ---- Link / Image / Table / Anchor inserts ----
+document.querySelector('[data-link-ok]').addEventListener('click', () => {
+  const url = document.getElementById('link-url').value.trim();
+  const text = document.getElementById('link-text').value.trim();
+  if (!url) return;
+  restoreSelection();
+  editor.focus();
+  if (savedSelection && savedSelection.toString()) {
+    exec('createLink', url);
+  } else {
+    const a = `<a href="${escapeHTML(url)}">${escapeHTML(text || url)}</a>`;
+    exec('insertHTML', a);
+  }
+  document.getElementById('dlg-link').classList.remove('open');
+  document.getElementById('link-url').value = '';
+  document.getElementById('link-text').value = '';
+});
+
+document.querySelector('[data-img-ok]').addEventListener('click', () => {
+  const src = document.getElementById('img-src').value.trim();
+  if (!src) return;
+  const alt = document.getElementById('img-alt').value.trim();
+  const w = document.getElementById('img-w').value.trim();
+  const h = document.getElementById('img-h').value.trim();
+  const align = document.getElementById('img-align').value;
+  let tag = `<img src="${escapeHTML(src)}" alt="${escapeHTML(alt)}"`;
+  if (w) tag += ` width="${escapeHTML(w)}"`;
+  if (h) tag += ` height="${escapeHTML(h)}"`;
+  if (align) tag += ` align="${escapeHTML(align)}"`;
+  tag += '>';
+  restoreSelection();
+  editor.focus();
+  exec('insertHTML', tag);
+  document.getElementById('dlg-image').classList.remove('open');
+  ['img-src','img-alt','img-w','img-h'].forEach(id => document.getElementById(id).value = '');
+});
+
+document.querySelector('[data-tbl-ok]').addEventListener('click', () => {
+  const r = parseInt(document.getElementById('tbl-rows').value, 10) || 2;
+  const c = parseInt(document.getElementById('tbl-cols').value, 10) || 2;
+  const b = parseInt(document.getElementById('tbl-border').value, 10) || 0;
+  const p = parseInt(document.getElementById('tbl-pad').value, 10) || 0;
+  let html = `<table border="${b}" cellpadding="${p}" cellspacing="0">`;
+  for (let i=0;i<r;i++) {
+    html += '<tr>';
+    for (let j=0;j<c;j++) html += '<td>&nbsp;</td>';
+    html += '</tr>';
+  }
+  html += '</table>';
+  restoreSelection();
+  editor.focus();
+  exec('insertHTML', html);
+  document.getElementById('dlg-table').classList.remove('open');
+});
+
+function insertAnchor() {
+  const name = prompt('Name of the named anchor:', '');
+  if (!name) return;
+  exec('insertHTML', `<a name="${escapeHTML(name)}"></a>`);
+}
+
+function showAlert(title, msg) {
+  document.getElementById('alert-title').textContent = title;
+  document.getElementById('alert-msg').innerText = msg;
+  openDialog('dlg-alert');
+}
+
+// ============================================================
+// Web Audio dial-up handshake synthesizer.
+// Recreates the iconic 1997 modem negotiation sound from scratch.
+// No samples used. No rights infringed. All shrieks original.
+// ============================================================
+class ModemSynth {
+  constructor() {
+    this.ctx = null;
+    this.master = null;
+    this.activeNodes = [];
   }
 
-  function preview() {
-    const html = wrapAsFullPage(editor.innerHTML, docTitle.textContent);
-    const w = window.open('', '_blank');
-    w.document.open(); w.document.write(html); w.document.close();
+  ensureContext() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.18; // moderate volume — not aggressive
+    this.master.connect(this.ctx.destination);
   }
 
-  function toggleSource() {
-    if (!inSourceMode) {
-      sourceView.value = formatHTML(editor.innerHTML);
-      editor.parentElement.style.display = 'none';
-      sourceView.style.display = 'block';
-      sourceView.focus();
-      inSourceMode = true;
-      setStatus('Viewing HTML source.');
-    } else {
-      editor.innerHTML = sourceView.value;
-      editor.parentElement.style.display = 'block';
-      sourceView.style.display = 'none';
-      inSourceMode = false;
-      setStatus('Returned to WYSIWYG.');
-    }
+  tone(freq, startTime, duration, gain = 1) {
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    g.gain.value = 0;
+    g.gain.setValueAtTime(0, startTime);
+    g.gain.linearRampToValueAtTime(gain, startTime + 0.02);
+    g.gain.setValueAtTime(gain, startTime + duration - 0.02);
+    g.gain.linearRampToValueAtTime(0, startTime + duration);
+    osc.connect(g);
+    g.connect(this.master);
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+    this.activeNodes.push(osc);
   }
 
-  // Quick & dirty pretty printer to look like Composer-saved HTML
-  function formatHTML(html) {
-    let s = html.replace(/></g, '>\n<');
-    // indent very loosely
-    let depth = 0, out = '';
-    s.split('\n').forEach(line => {
-      const open = /^<[^!/?][^>]*[^/]>$/.test(line.trim()) && !/^<(br|hr|img|input|meta|link)/i.test(line.trim());
-      const close = /^<\//.test(line.trim());
-      if (close) depth = Math.max(0, depth - 1);
-      out += '  '.repeat(depth) + line.trim() + '\n';
-      if (open) depth++;
+  noise(startTime, duration, gain = 0.6) {
+    const buf = this.ctx.createBuffer(1, Math.max(1, Math.floor(this.ctx.sampleRate * duration)), this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.5;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1800;
+    filter.Q.value = 0.7;
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(filter).connect(g).connect(this.master);
+    src.start(startTime);
+    src.stop(startTime + duration);
+    this.activeNodes.push(src);
+  }
+
+  dtmfDial(startTime) {
+    // Fake dial sequence: a few quick DTMF tones (just for vibes, not a real number)
+    const digits = [
+      [697, 1209], [697, 1336], [770, 1209], [852, 1477], [697, 1336]
+    ];
+    let t = startTime;
+    digits.forEach(([low, high]) => {
+      this.tone(low, t, 0.07, 0.4);
+      this.tone(high, t, 0.07, 0.4);
+      t += 0.12;
     });
-    return out.trim();
+    return t;
   }
 
-  // ---- Link / Image / Table / Anchor inserts ----
-  function openDialog(id) { document.getElementById(id).classList.add('open'); }
-  function closeDialog(el) {
-    const d = el.closest('.modal-backdrop');
-    if (d) d.classList.remove('open');
-  }
-  document.querySelectorAll('[data-close]').forEach(el =>
-    el.addEventListener('click', () => closeDialog(el))
-  );
-  document.querySelectorAll('.modal-backdrop').forEach(bg => {
-    bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
-  });
+  async play() {
+    this.ensureContext();
+    if (this.ctx.state === 'suspended') await this.ctx.resume();
 
-  document.querySelector('[data-link-ok]').addEventListener('click', () => {
-    const url = document.getElementById('link-url').value.trim();
-    const text = document.getElementById('link-text').value.trim();
-    if (!url) return;
-    restoreSelection();
-    editor.focus();
-    if (savedSelection && savedSelection.toString()) {
-      exec('createLink', url);
+    let t = this.ctx.currentTime;
+
+    // 1. Dial tone
+    this.tone(350, t, 0.4, 0.3);
+    this.tone(440, t, 0.4, 0.3);
+    t += 0.5;
+
+    // 2. DTMF dial sequence
+    t = this.dtmfDial(t);
+    t += 0.2;
+
+    // 3. Connection handshake — the iconic part
+    this.tone(2100, t, 0.35, 0.5);
+    t += 0.4;
+    this.tone(1100, t, 0.25, 0.4);
+    this.tone(1750, t + 0.1, 0.5, 0.5);
+    t += 0.7;
+
+    // 4. V.34 handshake noise burst — the shriek
+    this.noise(t, 0.8, 0.7);
+    this.tone(1450, t, 0.3, 0.4);
+    this.tone(1850, t + 0.3, 0.3, 0.4);
+    t += 0.9;
+
+    // 5. Modulation chirps
+    for (let i = 0; i < 4; i++) {
+      this.tone(900 + Math.random() * 800, t, 0.12, 0.4);
+      t += 0.13;
+    }
+
+    // 6. White noise sustain — the "data is flowing" sound
+    this.noise(t, 2.0, 0.5);
+    this.tone(2200, t, 1.5, 0.25);
+    this.tone(1100, t + 0.2, 1.3, 0.25);
+    t += 2.0;
+
+    // Return total duration in seconds so the caller can align the UI
+    return t - this.ctx.currentTime;
+  }
+
+  // Soft carrier hum — looped while a long request is still in flight.
+  hum(duration = 4) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.noise(t, duration, 0.16);
+    this.tone(2200, t, duration, 0.10);
+    this.tone(1100, t + 0.1, duration - 0.1, 0.10);
+  }
+
+  stop() {
+    this.activeNodes.forEach(n => {
+      try { n.stop(); } catch (_) {}
+    });
+    this.activeNodes = [];
+  }
+}
+
+const modem = new ModemSynth();
+let modemTimers = [];
+function clearModemTimers() { modemTimers.forEach(clearTimeout); modemTimers = []; }
+function stopModemAll() { clearModemTimers(); modem.stop(); }
+
+// Disconnect chime: bright pair on success, descending triplet on failure.
+function playDisconnect(success) {
+  if (!modemUpgraded) return;
+  try {
+    modem.ensureContext();
+    const t = modem.ctx.currentTime;
+    if (success) {
+      modem.tone(800, t, 0.2, 0.3);
+      modem.tone(400, t + 0.2, 0.3, 0.3);
     } else {
-      const a = `<a href="${escapeHTML(url)}">${escapeHTML(text || url)}</a>`;
-      exec('insertHTML', a);
+      modem.tone(400, t, 0.15, 0.3);
+      modem.tone(300, t + 0.2, 0.15, 0.3);
+      modem.tone(200, t + 0.4, 0.4, 0.3);
     }
-    document.getElementById('dlg-link').classList.remove('open');
-    document.getElementById('link-url').value = '';
-    document.getElementById('link-text').value = '';
-  });
+  } catch (_) {}
+}
 
-  document.querySelector('[data-img-ok]').addEventListener('click', () => {
-    const src = document.getElementById('img-src').value.trim();
-    if (!src) return;
-    const alt = document.getElementById('img-alt').value.trim();
-    const w = document.getElementById('img-w').value.trim();
-    const h = document.getElementById('img-h').value.trim();
-    const align = document.getElementById('img-align').value;
-    let tag = `<img src="${escapeHTML(src)}" alt="${escapeHTML(alt)}"`;
-    if (w) tag += ` width="${escapeHTML(w)}"`;
-    if (h) tag += ` height="${escapeHTML(h)}"`;
-    if (align) tag += ` align="${escapeHTML(align)}"`;
-    tag += '>';
-    restoreSelection();
-    editor.focus();
-    exec('insertHTML', tag);
-    document.getElementById('dlg-image').classList.remove('open');
-    ['img-src','img-alt','img-w','img-h'].forEach(id => document.getElementById(id).value = '');
-  });
+// Play the handshake, then loop a soft carrier hum if the request runs long.
+function playModemSequence() {
+  if (!modemUpgraded) return;
+  modem.play().then(durSec => {
+    const durMs = (durSec || 7.5) * 1000;
+    const humLoop = () => {
+      if (!aiInFlight || !modemUpgraded) return;
+      try { modem.hum(4); } catch (_) {}
+      modemTimers.push(setTimeout(humLoop, 3800));
+    };
+    modemTimers.push(setTimeout(humLoop, durMs));
+  }).catch(() => {});
+}
 
-  document.querySelector('[data-tbl-ok]').addEventListener('click', () => {
-    const r = parseInt(document.getElementById('tbl-rows').value, 10) || 2;
-    const c = parseInt(document.getElementById('tbl-cols').value, 10) || 2;
-    const b = parseInt(document.getElementById('tbl-border').value, 10) || 0;
-    const p = parseInt(document.getElementById('tbl-pad').value, 10) || 0;
-    let html = `<table border="${b}" cellpadding="${p}" cellspacing="0">`;
-    for (let i=0;i<r;i++) {
-      html += '<tr>';
-      for (let j=0;j<c;j++) html += '<td>&nbsp;</td>';
-      html += '</tr>';
-    }
-    html += '</table>';
-    restoreSelection();
-    editor.focus();
-    exec('insertHTML', html);
-    document.getElementById('dlg-table').classList.remove('open');
-  });
+// ============================================================
+// The 56k upgrade button. Modem audio is off by default; the
+// user upgrades their connection to enable it.
+// ============================================================
+const upgradeBtn = document.getElementById('modem-upgrade');
+let modemUpgraded = lsGet('modem-upgraded') === '1';
 
-  function insertAnchor() {
-    const name = prompt('Name of the named anchor:', '');
-    if (!name) return;
-    exec('insertHTML', `<a name="${escapeHTML(name)}"></a>`);
+function applyUpgradeUI() {
+  const speed = document.getElementById('modem-speed');
+  if (modemUpgraded) {
+    upgradeBtn.classList.add('upgraded');
+    speed.textContent = '56k v.90';
+    upgradeBtn.title = 'Connection upgraded. Click to return to 28.8 kbps.';
+  } else {
+    upgradeBtn.classList.remove('upgraded');
+    speed.textContent = '28.8 kbps';
+    upgradeBtn.title = 'Upgrade your connection to 56k for authentic modem audio.';
   }
+}
+applyUpgradeUI();
 
-  function showAlert(title, msg) {
-    document.getElementById('alert-title').textContent = title;
-    document.getElementById('alert-msg').innerText = msg;
-    openDialog('dlg-alert');
-  }
+// Reduced-motion visitors are never invited to enable audio.
+if (reduceMotion) {
+  const cta = document.getElementById('modem-cta');
+  if (cta) cta.style.display = 'none';
+}
 
-  // ============================================================
-  // THE AI BUTTON
-  // Calls Claude via the artifact's Anthropic API access. Asks it
-  // to generate a complete modern HTML page, then drops that page
-  // straight into Composer. The juxtaposition is the joke.
-  // ============================================================
-  const aiPrompt = document.getElementById('ai-prompt');
-  const aiStatus = document.getElementById('ai-status');
-  const aiGo = document.getElementById('ai-go');
-
-  document.querySelectorAll('.ai-example').forEach(el => {
-    el.addEventListener('click', () => { aiPrompt.value = el.dataset.example; aiPrompt.focus(); });
-  });
-
-  aiGo.addEventListener('click', generateWithAI);
-
-  async function generateWithAI() {
-    const userBrief = aiPrompt.value.trim();
-    if (!userBrief) { aiStatus.textContent = 'Please describe what you want.'; return; }
-    aiGo.disabled = true;
-    aiStatus.innerHTML = '<span class="ai-spinner"></span> Asking the mainframe...';
-
-    const systemMessage =
-      "You are a senior frontend designer in 2026. Given a brief, return a SINGLE complete modern HTML document. " +
-      "Requirements:\n" +
-      "- Output ONLY raw HTML starting with <!DOCTYPE html>. No markdown, no code fences, no commentary.\n" +
-      "- One self-contained file: all CSS in <style>, any JS in <script>, no external libraries except Google Fonts via <link>.\n" +
-      "- Cutting-edge aesthetic: deliberate typography, opinionated layout, real visual hierarchy. Pick a strong design direction (editorial, brutalist, refined minimalist, neo-luxury, etc) — never generic.\n" +
-      "- Beautiful semantic structure. Real content for the brief, not lorem ipsum. Plausible details.\n" +
-      "- Mobile-responsive. Subtle motion is welcome but not required.\n" +
-      "- Absolutely no purple-on-white gradients or generic AI-startup aesthetics.\n" +
-      "- The page must be visually striking enough that a partner at Andreessen Horowitz would think 'who shipped this'.";
-
+upgradeBtn.addEventListener('click', () => {
+  modemUpgraded = !modemUpgraded;
+  lsSet('modem-upgraded', modemUpgraded ? '1' : '0');
+  applyUpgradeUI();
+  if (modemUpgraded) {
     try {
-      const resp = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system: systemMessage,
-          brief: userBrief
-        })
-      });
-      if (!resp.ok) throw new Error('API error ' + resp.status);
-      const data = await resp.json();
-      const text = data.content
-        .filter(b => b.type === 'text')
-        .map(b => b.text)
-        .join('\n')
-        .trim();
+      modem.ensureContext();
+      if (modem.ctx.state === 'suspended') modem.ctx.resume();
+      const t = modem.ctx.currentTime;
+      modem.tone(800, t, 0.1, 0.3);
+      modem.tone(1200, t + 0.12, 0.15, 0.3);
+    } catch (_) {}
+    showToast('Connection upgraded to 56k v.90. Modem audio enabled.');
+  } else {
+    stopModemAll();
+    showToast('Connection downgraded to 28.8 kbps. Modem audio disabled.');
+  }
+});
 
-      // Strip code fences if Claude added them despite instructions
-      let html = text.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+// ============================================================
+// Bandwidth warning + period-alternative copy banks.
+// The server triages the brief; the client renders the response.
+// ============================================================
+const WARNINGS = {
+  warn_scope: [
+    { heading: "Bandwidth Notice",
+      body: "At 28.8 kbps, that request would take approximately 14 years to download. We've calculated this on our IBM PC clone. Are you sure?" },
+    { heading: "Whoa There, Partner",
+      body: "That brief calls for infrastructure we don't have. Our server is a Pentium 90 under a desk. Maybe try something smaller?" },
+    { heading: "Server Room Status: Sweating",
+      body: "Building that would melt the T1 line we share with the dental office. They need it for X-ray emails." },
+    { heading: "Project Scope Exceeded",
+      body: "I asked the modem. It made a noise I've never heard before. Let's reduce the scope or proceed at your own risk." },
+    { heading: "ETA: Sometime in 2039",
+      body: "We could build that, but our project manager (a Tamagotchi named Steve) says we'd miss launch by approximately 13 years." }
+  ],
+  warn_anachronism: [
+    { heading: "Time Machine Required",
+      body: "That feature won't be invented for several more years. Would you like to wait, or try something the 90s can actually do?" },
+    { heading: "Anachronism Detected",
+      body: "Real-time multiplayer requires the future. We've sent a fax to MIT asking for an estimated arrival date." },
+    { heading: "Not Yet Invented",
+      body: "Mobile apps are not a thing here. Our most portable device is a Palm Pilot, and even that is suspicious." },
+    { heading: "We Don't Have That Yet",
+      body: "Our IT department says that technology arrives sometime after Y2K (assuming Y2K is survivable). Try a smaller scope?" },
+    { heading: "From The Future Department",
+      body: "AI agents, blockchain, the metaverse — we appreciate the vision but the modem can't quite reach that far yet." }
+  ],
+  warn_nonsense: [
+    { heading: "Brief Unclear",
+      body: "We received your transmission but the line was noisy. Could you try again, this time with more detail?" },
+    { heading: "Garbled Signal",
+      body: "It looks like your connection dropped mid-thought. Want to try a clearer brief?" },
+    { heading: "Insufficient Data",
+      body: "Our parser is confused. It usually only gets confused on Tuesdays. Mind being more specific?" }
+  ],
+  refuse_abuse: [
+    { heading: "Request Declined",
+      body: "We're an HTML composer, not a hacker tool. That request isn't one we'll build. Please try a different brief." }
+  ],
+  refuse_offtopic: [
+    { heading: "Not Our Department",
+      body: "This site builds websites — not homework, legal opinions, medical advice, or financial guidance. Please try a website brief instead." }
+  ]
+};
 
-      // Pull body for the editor, but stash the full page for preview/save
-      const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
-      const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
-      const headStyleMatches = [...html.matchAll(/<style[\s\S]*?<\/style>/gi)];
-      const headLinkMatches = [...html.matchAll(/<link[^>]*>/gi)];
+function pickWarning(category) {
+  const bank = WARNINGS[category] || WARNINGS.warn_scope;
+  return bank[Math.floor(Math.random() * bank.length)];
+}
 
-      // We inject the styles + links inline at the top of the editor body so the
-      // generated design actually renders inside Composer's editing surface.
-      // (Yes, that is hilariously brutal. That is the point.)
-      let injected = '';
-      headLinkMatches.forEach(m => { injected += m[0]; });
-      headStyleMatches.forEach(m => { injected += m[0]; });
+const ALTERNATIVES = [
+  "A flaming animated logo for my homepage",
+  "A page with my name spinning around a 3D rotating globe",
+  "A hit counter shrine celebrating my 42 visitors",
+  "A guestbook with a sparkle background and rainbow text",
+  "A webring landing page for cat photography enthusiasts",
+  "A 'Best Viewed in Netscape Navigator' badge collection",
+  "An 'Under Construction' splash page with hazard tape",
+  "A Tamagotchi memorial page",
+  "A 'Where I've been on the Web' link list with star bullets",
+  "A Y2K survival tips landing page",
+  "A page celebrating my Beanie Baby collection",
+  "An ASCII art portrait of my cat Simba",
+  "A 'Mail Me!' rotating envelope graphic page",
+  "A homepage with seventeen marquee tags and three frames",
+  "A Spice Girls fan webring entry with MIDI music",
+  "A 'pets of the internet' photo gallery",
+  "A 'You are visitor #' page with sunburst graphics",
+  "A WebCrawler search tips guide",
+  "A 'Cool Links of the Week' page with star ratings",
+  "An animated logo for my band 'The HTML Tags'"
+];
 
-      const newBody = (bodyMatch ? bodyMatch[1] : html);
+function pickAlternatives(n) {
+  const shuffled = ALTERNATIVES.slice().sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
 
-      editor.innerHTML = injected + newBody;
-      if (titleMatch) docTitle.textContent = titleMatch[1].trim();
+// ============================================================
+// AI Composer — brief -> /api/generate -> rendered in the editor.
+// The server holds the system prompt; the client sends only the
+// brief. The server returns either a TRIAGE verdict or a built page.
+// ============================================================
+const aiDialog       = document.getElementById('dlg-ai');
+const aiDialogBody   = aiDialog.querySelector('.dialog-body');
+const aiDialogFooter = aiDialog.querySelector('.dialog-footer');
+const AI_BODY_HTML   = aiDialogBody.innerHTML;
+const AI_FOOTER_HTML = aiDialogFooter.innerHTML;
 
-      document.getElementById('dlg-ai').classList.remove('open');
-      aiStatus.textContent = 'Ready.';
-      showToast('Document generated successfully.');
-      setStatus('Document generated by AI Composer.');
-    } catch (err) {
-      aiStatus.textContent = 'Error: ' + err.message;
-    } finally {
-      aiGo.disabled = false;
-    }
+let aiInFlight   = false;
+let currentAbort = null;
+let abortReason  = null;      // 'timeout' | 'cancel'
+let loadingTimers = [];
+
+function setAIStatus(msg) {
+  const s = document.getElementById('ai-status');
+  if (s) s.textContent = msg;
+}
+
+function wireAIPromptMode() {
+  const promptEl = document.getElementById('ai-prompt');
+  aiDialog.querySelectorAll('.ai-example').forEach(el => {
+    el.addEventListener('click', () => {
+      if (promptEl) { promptEl.value = el.dataset.example; promptEl.focus(); }
+    });
+  });
+  const go = document.getElementById('ai-go');
+  if (go) go.addEventListener('click', () => generateWithAI());
+  const cancel = document.getElementById('ai-prompt-cancel');
+  if (cancel) cancel.addEventListener('click', closeAIDialog);
+}
+function resetAIDialogToPrompt() {
+  aiDialogBody.innerHTML = AI_BODY_HTML;
+  aiDialogFooter.innerHTML = AI_FOOTER_HTML;
+  wireAIPromptMode();
+}
+wireAIPromptMode();
+
+// Static titlebar close (✕) for the AI dialog.
+document.querySelectorAll('[data-close-ai]').forEach(el =>
+  el.addEventListener('click', closeAIDialog)
+);
+
+// ---- Loading-state choreography (timed to the modem handshake) ----
+const LOADING_STEPS = [
+  [0,     'Dialing 1-800-AINETSCAPE...'],
+  [700,   'Connecting to remote host...'],
+  [1500,  'Negotiating V.34 handshake...'],
+  [3000,  'Authenticating...'],
+  [4500,  'Receiving data...'],
+  [6000,  'Almost there...'],
+  [15000, 'Still receiving... (this is a big one)']
+];
+
+function clearLoadingTimers() { loadingTimers.forEach(clearTimeout); loadingTimers = []; }
+
+function renderLoadingState() {
+  aiDialogBody.innerHTML =
+    '<div class="ai-loading">' +
+      '<div class="ai-loading-row"><span class="ai-spinner"></span>' +
+      '<span class="ai-loading-line" id="ai-loading-line">Dialing 1-800-AINETSCAPE...</span></div>' +
+      '<div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>' +
+    '</div>';
+  aiDialogFooter.innerHTML = '<button class="dlg-btn" id="ai-cancel">Cancel</button>';
+  const c = document.getElementById('ai-cancel');
+  if (c) c.addEventListener('click', cancelGeneration);
+}
+
+function startLoadingChoreography() {
+  clearLoadingTimers();
+  LOADING_STEPS.forEach((step, idx) => {
+    loadingTimers.push(setTimeout(() => {
+      const line = document.getElementById('ai-loading-line');
+      const bar  = document.getElementById('ai-progress-bar');
+      if (line) line.textContent = step[1];
+      if (bar)  bar.style.width = Math.min(95, 10 + idx * 14) + '%';
+    }, step[0]));
+  });
+}
+
+// ---- Referral capture (?ref=) ----
+function captureRef() {
+  try {
+    const ref = new URLSearchParams(location.search).get('ref');
+    if (ref) ssSet('ainetscape-ref', ref.slice(0, 40));
+  } catch (_) {}
+}
+function getRef() { return ssGet('ainetscape-ref') || null; }
+captureRef();
+
+// ---- The generation flow ----
+async function generateWithAI(opts) {
+  opts = opts || {};
+  if (aiInFlight) return;                  // no double-submit while in flight
+
+  const promptEl = document.getElementById('ai-prompt');
+  let userBrief = (opts.brief != null ? opts.brief : (promptEl ? promptEl.value : '')) || '';
+  userBrief = userBrief.trim();
+
+  if (!userBrief) { setAIStatus('Please describe the website you would like to build.'); return; }
+  if (userBrief.length > 6000) {
+    setAIStatus('That brief is longer than a 28.8 kbps line can carry (6,000 character maximum). Please shorten it.');
+    return;
   }
 
-  // ============================================================
-  // Easter egg: F1 shows the help dialog
-  // ============================================================
-  document.addEventListener('keydown', e => {
-    if (e.key === 'F1') {
-      e.preventDefault();
-      showAlert('About AI Netscape',
-        'AI Netscape 4.7\n\n' +
-        '© 1997 AI Netscape\n' +
-        'All Rights Reserved.\n\n' +
-        'Now featuring one-click HTML one-page website generation powered by our proprietary ' +
-        'AI Composer\u2122 engine. Best viewed at minimum 800x600 in 256 colors or better.\n\n' +
-        'For technical support, dial 1-800-AINETSCAPE.');
-    }
-  });
+  aiInFlight = true;
+  abortReason = null;
+  renderLoadingState();
+  startLoadingChoreography();
+  playModemSequence();
 
-  // Initialize source/preview parity
-  editor.addEventListener('input', updateTagPath);
-  updateTagPath();
+  currentAbort = new AbortController();
+  const timeoutId = setTimeout(() => { abortReason = 'timeout'; try { currentAbort.abort(); } catch (_) {} }, 30000);
+
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: currentAbort.signal,
+      body: JSON.stringify({ brief: userBrief, ref: getRef(), forceBuild: !!opts.forceBuild })
+    });
+    clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      let serverMsg = '';
+      try { const j = await resp.json(); serverMsg = (j && j.error) || ''; } catch (_) {}
+      const e = new Error('HTTP ' + resp.status + (serverMsg ? ': ' + serverMsg : ''));
+      e.status = resp.status;
+      throw e;
+    }
+
+    const data = await resp.json();
+    const text = ((data && data.content) || [])
+      .filter(b => b && b.type === 'text')
+      .map(b => b.text)
+      .join('\n')
+      .trim();
+
+    if (!text) throw new Error('empty response');
+
+    stopGenerationFx(true);
+
+    if (opts.forceBuild) { renderBuild(text, userBrief); return; }
+
+    const firstLine = text.split('\n')[0].trim();
+    const m = firstLine.match(/^TRIAGE::(\w+)$/);
+    if (!m) { renderBuild(text, userBrief); return; }
+
+    const verdict = m[1];
+    const rest = text.slice(firstLine.length).trim();
+    if (verdict === 'build')                   renderBuild(rest, userBrief);
+    else if (verdict.indexOf('warn_') === 0)   renderWarning(verdict, userBrief);
+    else if (verdict.indexOf('refuse_') === 0) renderRefusal(verdict);
+    else                                       renderBuild(rest, userBrief);
+
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err && err.name === 'AbortError' && abortReason === 'cancel') {
+      return;   // user cancelled — cancelGeneration() already cleaned up
+    }
+    stopGenerationFx(false);
+    handleAIError(err, userBrief);
+  } finally {
+    aiInFlight = false;
+    currentAbort = null;
+    abortReason = null;
+  }
+}
+
+function stopGenerationFx(success) {
+  clearLoadingTimers();
+  stopModemAll();
+  playDisconnect(success);
+}
+
+function abortIfInFlight() {
+  if (!aiInFlight) return;
+  abortReason = 'cancel';
+  if (currentAbort) { try { currentAbort.abort(); } catch (_) {} }
+  clearLoadingTimers();
+  stopModemAll();
+  aiInFlight = false;
+}
+
+// Cancel inside the loading state: stop, return to prompt entry (dialog stays open).
+function cancelGeneration() {
+  abortIfInFlight();
+  resetAIDialogToPrompt();
+  setAIStatus('Ready.');
+}
+
+// Close (✕ / backdrop): stop anything in flight and dismiss the dialog.
+function closeAIDialog() {
+  abortIfInFlight();
+  aiDialog.classList.remove('open');
+  resetAIDialogToPrompt();
+  setAIStatus('Ready.');
+}
+
+// Render a built page: inject its <style>/<link> + <body> into the editor.
+function renderBuild(htmlText, originalBrief) {
+  let html = String(htmlText || '').trim();
+  html = html.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  html = html.replace(/^TRIAGE::\w+\s*/i, '').trim();
+
+  if (!/<(!doctype html|html|body|main|section|header|div)/i.test(html)) {
+    handleAIError(new Error('garbled'), originalBrief);
+    return;
+  }
+
+  const bodyMatch  = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+  const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
+  const styleTags  = html.match(/<style[\s\S]*?<\/style>/gi) || [];
+  const linkTags   = html.match(/<link[^>]*>/gi) || [];
+
+  // Inject the styles + font links inline at the top of the editor body so
+  // the generated design renders inside Composer's editing surface.
+  let injected = '';
+  linkTags.forEach(m => { injected += m; });
+  styleTags.forEach(m => { injected += m; });
+  const newBody = bodyMatch ? bodyMatch[1] : html;
+
+  if (inSourceMode) toggleSource();   // return to the visual view if needed
+  editor.innerHTML = injected + newBody;
+  if (titleMatch) docTitle.textContent = (titleMatch[1].trim().slice(0, 80)) || 'Untitled';
+
+  closeAIDialog();
+  showToast('Document generated successfully.');
+  setStatus('Document generated by AI Composer.');
+  maybeShowUpgradeHint();
+}
+
+function alternativesHTML(list) {
+  return list.map(alt =>
+    '<button class="alt-suggestion" data-brief="' + escapeAttr(alt) + '">&rarr; ' + escapeHTML(alt) + '</button>'
+  ).join('');
+}
+
+function noticeBodyHTML(entry, list) {
+  return '<div style="font-size:11px; padding:4px 0;">' +
+      '<div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:12px;">' +
+        '<span style="font-size:24px; line-height:1;">⚠️</span>' +
+        '<div>' +
+          '<div style="font-weight:bold; margin-bottom:4px;">' + escapeHTML(entry.heading) + '</div>' +
+          '<div>' + escapeHTML(entry.body) + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="border-top:1px solid var(--sh); padding-top:8px; margin-top:8px;">' +
+        '<div style="margin-bottom:6px;">Bandwidth-friendly alternatives:</div>' +
+        alternativesHTML(list) +
+      '</div>' +
+    '</div>';
+}
+
+function renderWarning(category, originalBrief) {
+  aiDialogBody.innerHTML = noticeBodyHTML(pickWarning(category), pickAlternatives(3));
+  aiDialogFooter.innerHTML =
+    '<button class="dlg-btn default" id="try-anyway">Try it anyway</button>' +
+    '<button class="dlg-btn" id="warn-cancel">Cancel</button>';
+  wireAlternatives();
+  const ta = document.getElementById('try-anyway');
+  if (ta) ta.addEventListener('click', () => {
+    resetAIDialogToPrompt();
+    const p = document.getElementById('ai-prompt');
+    if (p) p.value = originalBrief;
+    generateWithAI({ brief: originalBrief, forceBuild: true });
+  });
+  const wc = document.getElementById('warn-cancel');
+  if (wc) wc.addEventListener('click', closeAIDialog);
+}
+
+function renderRefusal(category) {
+  aiDialogBody.innerHTML = noticeBodyHTML(pickWarning(category), pickAlternatives(3));
+  aiDialogFooter.innerHTML =
+    '<button class="dlg-btn default" id="ai-try-different">Try a different brief</button>';
+  wireAlternatives();
+  const td = document.getElementById('ai-try-different');
+  if (td) td.addEventListener('click', () => { resetAIDialogToPrompt(); setAIStatus('Ready.'); });
+}
+
+function wireAlternatives() {
+  aiDialogBody.querySelectorAll('.alt-suggestion').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const brief = btn.getAttribute('data-brief');
+      resetAIDialogToPrompt();
+      const p = document.getElementById('ai-prompt');
+      if (p) p.value = brief;
+      generateWithAI({ brief: brief });
+    });
+  });
+}
+
+function handleAIError(err, originalBrief) {
+  const m = (err && err.message) || '';
+  let msg;
+  if (err && err.name === 'AbortError') {
+    msg = 'The connection timed out — the line dropped. Please try again.';
+  } else if (m.indexOf('429') !== -1) {
+    msg = 'The line is busy — too many callers right now. Please hang up and try again in a minute.';
+  } else if (m.indexOf('401') !== -1 || m.indexOf('403') !== -1) {
+    msg = 'The host refused the connection. Our support desk has been notified.';
+  } else if (m.indexOf('500') !== -1 || m.indexOf('502') !== -1 || m.indexOf('503') !== -1) {
+    msg = 'The host is experiencing difficulties. Please try again in a few moments.';
+  } else if (m.indexOf('Failed to fetch') !== -1 || m.indexOf('NetworkError') !== -1 || m.toLowerCase().indexOf('network') !== -1) {
+    msg = 'The line dropped. Please check your connection and try again.';
+  } else {
+    msg = 'The transmission came through garbled. Please try again.';
+  }
+  resetAIDialogToPrompt();
+  const p = document.getElementById('ai-prompt');
+  if (p && originalBrief) p.value = originalBrief;
+  setAIStatus(msg);
+}
+
+// ============================================================
+// First-visit onboarding hints
+// ============================================================
+function makeHint(text, anchorEl, placement) {
+  const hint = document.createElement('div');
+  hint.className = 'ui-hint';
+  hint.textContent = text;
+  document.body.appendChild(hint);
+  const r = anchorEl.getBoundingClientRect();
+  if (placement === 'below') {
+    hint.style.top = (r.bottom + 6) + 'px';
+    hint.style.left = Math.max(8, Math.min(r.left - 16, window.innerWidth - 90)) + 'px';
+  } else {
+    hint.style.bottom = (window.innerHeight - r.top + 6) + 'px';
+    hint.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 90)) + 'px';
+  }
+  if (!reduceMotion) hint.style.animation = 'hintWiggle 1.4s ease-in-out infinite';
+  return hint;
+}
+
+// Hint 1: point at the AI Composer button 3s after load.
+setTimeout(() => {
+  const btn = document.querySelector('.tbtn.ai-btn');
+  if (!btn || ssGet('seen-ai-hint')) return;
+  const hint = makeHint('↑ try this', btn, 'below');
+  const dismiss = () => { hint.remove(); ssSet('seen-ai-hint', '1'); };
+  btn.addEventListener('click', dismiss, { once: true });
+  setTimeout(dismiss, 12000);
+}, 3000);
+
+// Hint 2: point at the 56k upgrade button after the first successful build.
+function maybeShowUpgradeHint() {
+  if (lsGet('seen-upgrade-hint') || modemUpgraded || reduceMotion) return;
+  setTimeout(() => {
+    if (lsGet('seen-upgrade-hint') || modemUpgraded) return;
+    const hint = makeHint('↓ try this', upgradeBtn, 'above');
+    const dismiss = () => { hint.remove(); lsSet('seen-upgrade-hint', '1'); };
+    upgradeBtn.addEventListener('click', dismiss, { once: true });
+    setTimeout(dismiss, 10000);
+  }, 1500);
+}
+
+// ============================================================
+// F1 shows the About dialog
+// ============================================================
+document.addEventListener('keydown', e => {
+  if (e.key === 'F1') {
+    e.preventDefault();
+    showAlert('About AI Netscape',
+      'AI Netscape 4.7\n\n' +
+      '© 1997 AI Netscape\n' +
+      'All Rights Reserved.\n\n' +
+      'Now featuring one-click HTML one-page website generation powered by our proprietary ' +
+      'AI Composer™ engine. Best viewed at minimum 800x600 in 256 colors or better.\n\n' +
+      'For technical support, dial 1-800-AINETSCAPE.');
+  }
+});
+
+// Initialize tag-path tracking
+editor.addEventListener('input', updateTagPath);
+updateTagPath();
 </script>
 
 </body>
