@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI Netscape</title>
+<style>
+  /* ============================================================
+     Authentic Motif / Win95-era chrome.
+     Beveled buttons, gray everywhere, sharp 1px highlights.
+     ============================================================ */
+  :root {
+    --face:     #c0c0c0;
+    --face-lt:  #dfdfdf;
+    --hi:       #ffffff;
+    --sh:       #808080;
+    --sh-dk:    #404040;
+    --text:     #000000;
+    --link:     #0000ee;
+    --vlink:    #551a8b;
+    --select:   #000080;
+    --select-fg:#ffffff;
+    --title-active:   #000080;
+    --title-inactive: #808080;
+    --status:   #c0c0c0;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    background: #008080; /* the teal desktop */
+    font-family: "MS Sans Serif", "Geneva", "Tahoma", sans-serif;
+    font-size: 11px;
+    color: var(--text);
+  }
+  body {
+    /* Center the 800px window on the teal desktop, scroll if needed */
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* ---- Window frame ---- */
+  /* Fixed 800px wide, centered. Period-correct: 1997 web was designed for
+     800x600 CRTs. The teal desktop bleeds around the window edges to sell
+     the "this is an OS window" illusion. */
+  .window {
+    width: 800px;
+    max-width: 800px;
+    height: calc(100vh - 24px);
+    max-height: 720px;       /* matches 800x600-era proportions, but a bit taller for modern viewports */
+    margin: 12px auto;
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 1px 1px 0 var(--sh-dk);
+  }
+  /* On taller viewports, let the window grow but cap it so it doesn't dominate. */
+  @media (min-height: 900px) {
+    .window { max-height: 820px; }
+  }
+
+  /* On narrow viewports (mobile, tablets in portrait), abandon the 800px
+     fixed width and go edge-to-edge. Period purity yields to usability —
+     a 1997 viewer didn't have a phone, but Marc does. */
+  @media (max-width: 820px) {
+    .window {
+      width: auto;
+      max-width: none;
+      height: calc(100vh - 12px);
+      max-height: none;
+      margin: 6px;
+    }
+    .toolbar { flex-wrap: wrap; }
+    .tbtn { min-width: 44px; padding: 2px 3px; }
+    .tbtn .lbl { font-size: 9px; }
+    .format-bar { flex-wrap: wrap; }
+    .format-bar select { max-width: 90px; font-size: 10px; }
+    .dialog { min-width: 0; width: calc(100vw - 24px) !important; }
+    .titlebar .title { font-size: 10px; }
+    .statusbar { font-size: 10px; }
+  }
+
+  @media (pointer: coarse) {
+    .tbtn, .fbtn, .dlg-btn { min-height: 32px; }
+    .menu-item { padding: 4px 10px; }
+  }
+
+  .titlebar {
+    height: 20px;
+    background: var(--title-active);
+    color: white;
+    display: flex;
+    align-items: center;
+    padding: 0 2px 0 4px;
+    font-weight: bold;
+    font-size: 11px;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .titlebar .title { flex: 1; }
+  .titlebar .title .doc { font-weight: normal; }
+  .titlebar-btns { display: flex; gap: 2px; }
+  .titlebar-btn {
+    width: 16px; height: 14px;
+    background: var(--face);
+    border: 1px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    color: black;
+    font-size: 9px;
+    font-weight: bold;
+    line-height: 10px;
+    text-align: center;
+    cursor: default;
+    font-family: "Marlett", "MS Sans Serif", sans-serif;
+    padding: 0;
+  }
+  .titlebar-btn:active {
+    border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk);
+  }
+
+  /* ---- Menu bar ---- */
+  .menubar {
+    display: flex;
+    background: var(--face);
+    border-bottom: 1px solid var(--sh);
+    padding: 2px;
+    flex-shrink: 0;
+  }
+  .menu-item {
+    padding: 2px 8px;
+    cursor: default;
+    user-select: none;
+  }
+  .menu-item:hover { background: var(--select); color: var(--select-fg); }
+  .menu-item .acc { text-decoration: underline; }
+
+  /* ---- Toolbar (Composer toolbar) ---- */
+  .toolbar {
+    display: flex;
+    align-items: stretch;
+    gap: 1px;
+    padding: 3px;
+    background: var(--face);
+    border-bottom: 1px solid var(--sh);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .tbtn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    padding: 3px 5px 2px;
+    background: var(--face);
+    border: 2px solid transparent;
+    cursor: default;
+    user-select: none;
+    font-size: 10px;
+    color: black;
+    line-height: 1;
+  }
+  .tbtn:hover {
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+  }
+  .tbtn:active, .tbtn.pressed {
+    border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk);
+    background: var(--face-lt);
+  }
+  .tbtn .icon {
+    width: 24px; height: 24px;
+    margin-bottom: 2px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tbtn .lbl { font-size: 10px; }
+  .tb-sep {
+    width: 1px;
+    margin: 2px 3px;
+    background: var(--sh);
+    border-right: 1px solid var(--hi);
+  }
+
+  /* THE button. The anachronism. */
+  .tbtn.ai-btn {
+    background: linear-gradient(180deg, #ff00ff 0%, #00ffff 100%);
+    color: black;
+    border: 2px solid;
+    border-color: #ffff00 #ff00ff #ff00ff #ffff00;
+    animation: aiglow 1.6s ease-in-out infinite alternate;
+  }
+  .tbtn.ai-btn .lbl { font-weight: bold; text-shadow: 1px 1px 0 #fff; }
+  .tbtn.ai-btn:hover {
+    border-color: #ffff00 #00ffff #00ffff #ffff00;
+  }
+  @keyframes aiglow {
+    from { box-shadow: 0 0 0 0 rgba(255, 0, 255, 0.6); }
+    to   { box-shadow: 0 0 6px 2px rgba(0, 255, 255, 0.9); }
+  }
+
+  /* ---- Formatting toolbar (second row) ---- */
+  .format-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    background: var(--face);
+    border-bottom: 1px solid var(--sh);
+    flex-shrink: 0;
+  }
+  .format-bar select,
+  .format-bar input[type=color] {
+    height: 21px;
+    background: white;
+    border: 1px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    font-family: "MS Sans Serif", sans-serif;
+    font-size: 11px;
+    padding: 0 2px;
+  }
+  .fbtn {
+    width: 22px; height: 22px;
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    cursor: default;
+    user-select: none;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Times New Roman", serif;
+    font-size: 13px;
+    padding: 0;
+  }
+  .fbtn:active, .fbtn.pressed {
+    border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk);
+  }
+  .fbtn.b { font-weight: bold; }
+  .fbtn.i { font-style: italic; }
+  .fbtn.u { text-decoration: underline; }
+
+  /* ---- Editing surface ---- */
+  .workspace {
+    flex: 1;
+    background: var(--face);
+    padding: 2px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .edit-frame {
+    flex: 1;
+    background: white;
+    border: 2px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    overflow: auto;
+    min-height: 0;
+  }
+  #editor {
+    min-height: 100%;
+    padding: 12px 18px;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 16px;
+    color: black;
+    background: white;
+    outline: none;
+  }
+  #editor h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
+  #editor h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0; }
+  #editor h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
+  #editor h4 { font-size: 1em; font-weight: bold; margin: 1.33em 0; }
+  #editor h5 { font-size: 0.83em; font-weight: bold; margin: 1.67em 0; }
+  #editor h6 { font-size: 0.67em; font-weight: bold; margin: 2.33em 0; }
+  #editor p { margin: 1em 0; }
+  #editor a { color: var(--link); text-decoration: underline; }
+  #editor hr { border: 0; border-top: 1px solid #888; border-bottom: 1px solid #fff; }
+  #editor table { border-collapse: collapse; }
+  #editor table[border] td, #editor table[border] th { border: 1px solid #666; padding: 4px 8px; }
+  #editor img { max-width: 100%; }
+  #editor blink { animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  #editor marquee { display: inline-block; }
+
+  /* Source view textarea */
+  #source-view {
+    display: none;
+    flex: 1;
+    width: 100%;
+    background: white;
+    border: 2px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    font-family: "Courier New", Courier, monospace;
+    font-size: 12px;
+    color: black;
+    padding: 8px;
+    resize: none;
+    outline: none;
+  }
+
+  /* ---- Status bar ---- */
+  .statusbar {
+    height: 20px;
+    background: var(--face);
+    border-top: 1px solid var(--hi);
+    display: flex;
+    align-items: center;
+    padding: 0 2px;
+    font-size: 11px;
+    flex-shrink: 0;
+    gap: 2px;
+  }
+  .status-pane {
+    border: 1px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    padding: 1px 6px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+  }
+  .status-pane.flex { flex: 1; }
+
+  /* ---- Modal dialogs (Motif style) ---- */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.0); /* no dim - period accurate */
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .dialog {
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    box-shadow: 2px 2px 0 var(--sh-dk);
+    min-width: 360px;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .dialog .titlebar { background: var(--title-active); }
+  .dialog-body {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: auto;
+  }
+  .dialog-row { display: flex; align-items: center; gap: 8px; }
+  .dialog-row label { min-width: 96px; font-size: 11px; }
+  .dialog-row input[type=text],
+  .dialog-row input[type=url],
+  .dialog-row select,
+  .dialog-row textarea {
+    flex: 1;
+    background: white;
+    border: 1px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    font-family: "MS Sans Serif", sans-serif;
+    font-size: 11px;
+    padding: 2px 4px;
+    min-height: 18px;
+  }
+  .dialog-row textarea {
+    font-family: "Courier New", monospace;
+    min-height: 100px;
+    resize: vertical;
+    font-size: 12px;
+  }
+  .dialog-footer {
+    padding: 8px 14px 12px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    border-top: 1px solid var(--sh);
+  }
+  .dlg-btn {
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    padding: 3px 14px;
+    min-width: 70px;
+    font-family: "MS Sans Serif", sans-serif;
+    font-size: 11px;
+    cursor: default;
+  }
+  .dlg-btn:active { border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk); }
+  .dlg-btn.default { outline: 1px dotted black; outline-offset: -4px; font-weight: bold; }
+
+  /* AI dialog gets a tiny bit of flair */
+  .ai-dialog .titlebar {
+    background: linear-gradient(90deg, #ff00ff, #00ffff);
+    color: black;
+    text-shadow: 1px 1px 0 white;
+  }
+  .ai-spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--sh);
+    border-top-color: var(--title-active);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .ai-examples {
+    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
+  }
+  .ai-example {
+    background: var(--face);
+    border: 1px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    padding: 2px 6px;
+    font-size: 10px;
+    cursor: default;
+  }
+  .ai-example:active { border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk); }
+
+  .ai-status { font-size: 11px; color: var(--sh-dk); min-height: 16px; }
+
+  /* Toast pseudo-popup for "saved" etc */
+  .toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    padding: 6px 12px;
+    font-size: 11px;
+    z-index: 200;
+    display: none;
+    box-shadow: 2px 2px 0 var(--sh-dk);
+  }
+  .toast.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="window" id="main-window">
+  <div class="titlebar">
+    <span class="title">AI Netscape - [<span class="doc" id="doc-title">Untitled</span>]</span>
+    <div class="titlebar-btns">
+      <button class="titlebar-btn" title="Minimize">_</button>
+      <button class="titlebar-btn" title="Maximize">▢</button>
+      <button class="titlebar-btn" title="Close">✕</button>
+    </div>
+  </div>
+
+  <!-- Menu bar -->
+  <div class="menubar">
+    <div class="menu-item"><span class="acc">F</span>ile</div>
+    <div class="menu-item"><span class="acc">E</span>dit</div>
+    <div class="menu-item"><span class="acc">V</span>iew</div>
+    <div class="menu-item"><span class="acc">I</span>nsert</div>
+    <div class="menu-item">F<span class="acc">o</span>rmat</div>
+    <div class="menu-item"><span class="acc">T</span>ools</div>
+    <div class="menu-item"><span class="acc">C</span>ommunicator</div>
+    <div class="menu-item"><span class="acc">H</span>elp</div>
+  </div>
+
+  <!-- Main toolbar -->
+  <div class="toolbar" id="main-toolbar">
+    <div class="tbtn" data-action="new">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <path d="M4 2 h10 l4 4 v14 h-14 z" fill="white" stroke="black"/>
+          <path d="M14 2 v4 h4" fill="none" stroke="black"/>
+        </svg>
+      </div>
+      <div class="lbl">New</div>
+    </div>
+    <div class="tbtn" data-action="open">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <path d="M2 6 h7 l2 2 h9 v10 h-18 z" fill="#ffcc66" stroke="black"/>
+          <path d="M2 6 h7 l2 2 h9" fill="none" stroke="black"/>
+        </svg>
+      </div>
+      <div class="lbl">Open</div>
+    </div>
+    <div class="tbtn" data-action="save">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="3" y="3" width="16" height="16" fill="#4060a0" stroke="black"/>
+          <rect x="6" y="3" width="10" height="6" fill="white" stroke="black"/>
+          <rect x="7" y="12" width="8" height="7" fill="#dfdfdf" stroke="black"/>
+          <rect x="13" y="4" width="2" height="4" fill="black"/>
+        </svg>
+      </div>
+      <div class="lbl">Save</div>
+    </div>
+    <div class="tbtn" data-action="publish">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <circle cx="11" cy="11" r="8" fill="#4080d0" stroke="black"/>
+          <path d="M3 11 h16 M11 3 a 10 8 0 0 1 0 16 a 10 8 0 0 1 0 -16 M11 3 v16" fill="none" stroke="white" stroke-width="0.8"/>
+        </svg>
+      </div>
+      <div class="lbl">Publish</div>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tbtn" data-action="preview">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="2" y="3" width="18" height="13" fill="#dfdfdf" stroke="black"/>
+          <rect x="3" y="4" width="16" height="11" fill="white"/>
+          <path d="M8 18 h6 M11 16 v2" stroke="black"/>
+          <path d="M6 7 h10 M6 9 h10 M6 11 h6" stroke="#888"/>
+        </svg>
+      </div>
+      <div class="lbl">Preview</div>
+    </div>
+    <div class="tbtn" data-action="source">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="2" y="3" width="18" height="16" fill="white" stroke="black"/>
+          <text x="11" y="14" text-anchor="middle" font-family="Courier" font-size="9" fill="black">&lt;/&gt;</text>
+        </svg>
+      </div>
+      <div class="lbl">Source</div>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tbtn" data-action="link">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <path d="M5 11 a4 4 0 0 1 4 -4 h2 M17 11 a4 4 0 0 1 -4 4 h-2" fill="none" stroke="black" stroke-width="2"/>
+          <path d="M8 11 h6" stroke="black" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="lbl">Link</div>
+    </div>
+    <div class="tbtn" data-action="anchor">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <circle cx="11" cy="6" r="2" fill="none" stroke="black" stroke-width="1.5"/>
+          <path d="M11 8 v10 M7 18 h8 M5 14 a6 4 0 0 0 12 0" fill="none" stroke="black" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="lbl">Anchor</div>
+    </div>
+    <div class="tbtn" data-action="image">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="2" y="3" width="18" height="16" fill="white" stroke="black"/>
+          <circle cx="7" cy="8" r="2" fill="#ffcc00"/>
+          <path d="M2 16 l5 -5 l4 4 l3 -3 l6 6 z" fill="#66aa44"/>
+        </svg>
+      </div>
+      <div class="lbl">Image</div>
+    </div>
+    <div class="tbtn" data-action="hline">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <line x1="2" y1="11" x2="20" y2="11" stroke="black" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="lbl">H. Line</div>
+    </div>
+    <div class="tbtn" data-action="table">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="2" y="4" width="18" height="14" fill="white" stroke="black"/>
+          <line x1="2" y1="9" x2="20" y2="9" stroke="black"/>
+          <line x1="2" y1="13.5" x2="20" y2="13.5" stroke="black"/>
+          <line x1="8" y1="4" x2="8" y2="18" stroke="black"/>
+          <line x1="14" y1="4" x2="14" y2="18" stroke="black"/>
+        </svg>
+      </div>
+      <div class="lbl">Table</div>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tbtn" data-action="spell">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <text x="2" y="14" font-family="Times" font-size="11" font-weight="bold" fill="black">ABC</text>
+          <path d="M2 16 q3 -2 6 0 t6 0" stroke="red" fill="none" stroke-width="1"/>
+        </svg>
+      </div>
+      <div class="lbl">Spelling</div>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <!-- THE BUTTON -->
+    <div class="tbtn ai-btn" data-action="ai" title="Generate website with AI Composer">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <path d="M11 2 l2 6 l6 2 l-6 2 l-2 6 l-2 -6 l-6 -2 l6 -2 z" fill="white" stroke="black" stroke-width="0.8"/>
+          <circle cx="17" cy="5" r="1.5" fill="white" stroke="black" stroke-width="0.6"/>
+          <circle cx="4" cy="18" r="1" fill="white" stroke="black" stroke-width="0.6"/>
+        </svg>
+      </div>
+      <div class="lbl">AI Composer</div>
+    </div>
+  </div>
+
+  <!-- Formatting toolbar -->
+  <div class="format-bar">
+    <select id="paragraph-style" title="Paragraph style">
+      <option value="p">Normal</option>
+      <option value="h1">Heading 1</option>
+      <option value="h2">Heading 2</option>
+      <option value="h3">Heading 3</option>
+      <option value="h4">Heading 4</option>
+      <option value="h5">Heading 5</option>
+      <option value="h6">Heading 6</option>
+      <option value="pre">Formatted</option>
+      <option value="blockquote">Address</option>
+    </select>
+    <select id="font-face" title="Font">
+      <option value="">Variable Width</option>
+      <option value="Courier New, Courier, monospace">Fixed Width</option>
+      <option value="Times New Roman, Times, serif">Times New Roman</option>
+      <option value="Helvetica, Arial, sans-serif">Helvetica</option>
+      <option value="Arial, sans-serif">Arial</option>
+      <option value="Courier New, Courier, monospace">Courier</option>
+    </select>
+    <select id="font-size" title="Font size">
+      <option value="1">-2</option>
+      <option value="2">-1</option>
+      <option value="3" selected>Medium</option>
+      <option value="4">+1</option>
+      <option value="5">+2</option>
+      <option value="6">+3</option>
+      <option value="7">+4</option>
+    </select>
+    <input type="color" id="font-color" value="#000000" title="Text color">
+    <button class="fbtn b" data-cmd="bold" title="Bold">B</button>
+    <button class="fbtn i" data-cmd="italic" title="Italic">I</button>
+    <button class="fbtn u" data-cmd="underline" title="Underline">U</button>
+    <button class="fbtn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+    <span class="tb-sep" style="height:18px"></span>
+    <button class="fbtn" data-cmd="insertUnorderedList" title="Bulleted list">•≡</button>
+    <button class="fbtn" data-cmd="insertOrderedList" title="Numbered list">1.</button>
+    <button class="fbtn" data-cmd="outdent" title="Decrease indent">⇤</button>
+    <button class="fbtn" data-cmd="indent" title="Increase indent">⇥</button>
+    <span class="tb-sep" style="height:18px"></span>
+    <button class="fbtn" data-cmd="justifyLeft" title="Align left">⯇≡</button>
+    <button class="fbtn" data-cmd="justifyCenter" title="Center">≡</button>
+    <button class="fbtn" data-cmd="justifyRight" title="Align right">≡⯈</button>
+  </div>
+
+  <!-- Workspace -->
+  <div class="workspace">
+    <div class="edit-frame">
+      <div id="editor" contenteditable="true">
+        <center>
+          <h1><font color="#FF0000">Welcome</font> to <font color="#0000FF">My Home Page!</font></h1>
+        </center>
+        <hr noshade size="4">
+        <p>
+          <font face="Times New Roman" size="4">
+            This is my brand new web page, made with <b>AI Netscape</b>!
+            I am very excited to share my interests and hobbies with the
+            <font color="#008000"><i>World Wide Web</i></font>.
+          </font>
+        </p>
+        <p><font size="3">This page is best viewed with a strong sense of <b>nostalgia</b> and a dash of <b>time travel</b>.</font></p>
+        <h2><font color="#800080">My Interests</font></h2>
+        <ul>
+          <li><font size="3">Deep Thought 7.5</font></li>
+          <li><font size="3">Not panicking</font></li>
+          <li><font size="3">My cat, Simba</font></li>
+        </ul>
+        <hr>
+        <center>
+          <p><font size="2"><i>Last updated: May 22, 2026</i></font></p>
+          <p><font size="2"><a href="mailto:webmaster@ainetscape.com">webmaster@ainetscape.com</a></font></p>
+          <p><font size="1" color="#808080">This page has been visited <b>00042</b> times.</font></p>
+        </center>
+      </div>
+    </div>
+    <textarea id="source-view" spellcheck="false"></textarea>
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <div class="status-pane flex" id="status-msg">Document: Done</div>
+    <div class="status-pane" id="status-tags">&lt;body&gt;</div>
+    <div class="status-pane">28.8 kbps</div>
+    <div class="status-pane" id="status-clock">--:--</div>
+  </div>
+</div>
+
+
+<!-- =================================================================
+     DIALOGS
+     ================================================================= -->
+
+<!-- Link dialog -->
+<div class="modal-backdrop" id="dlg-link">
+  <div class="dialog" style="width: 420px;">
+    <div class="titlebar">
+      <span class="title">Character Properties</span>
+      <div class="titlebar-btns"><button class="titlebar-btn" data-close>✕</button></div>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row">
+        <label>Link source:</label>
+        <input type="text" id="link-text" placeholder="(selected text)">
+      </div>
+      <div class="dialog-row">
+        <label>Link to:</label>
+        <input type="url" id="link-url" placeholder="http:// or mailto:">
+      </div>
+      <div class="dialog-row" style="font-size:10px; color:#444;">
+        <label></label>
+        <span>Tip: type <code>mailto:</code> followed by an e-mail address to send mail.</span>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="dlg-btn default" data-link-ok>OK</button>
+      <button class="dlg-btn" data-close>Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Image dialog -->
+<div class="modal-backdrop" id="dlg-image">
+  <div class="dialog" style="width: 460px;">
+    <div class="titlebar">
+      <span class="title">Image Properties</span>
+      <div class="titlebar-btns"><button class="titlebar-btn" data-close>✕</button></div>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row">
+        <label>Image location:</label>
+        <input type="url" id="img-src" placeholder="https://...">
+      </div>
+      <div class="dialog-row">
+        <label>Alternate text:</label>
+        <input type="text" id="img-alt">
+      </div>
+      <div class="dialog-row">
+        <label>Width:</label>
+        <input type="text" id="img-w" placeholder="(optional)">
+        <label style="min-width:auto">Height:</label>
+        <input type="text" id="img-h" placeholder="(optional)">
+      </div>
+      <div class="dialog-row">
+        <label>Alignment:</label>
+        <select id="img-align">
+          <option value="">At the bottom</option>
+          <option value="middle">In the middle</option>
+          <option value="top">At the top</option>
+          <option value="left">Wrap right (image on left)</option>
+          <option value="right">Wrap left (image on right)</option>
+        </select>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="dlg-btn default" data-img-ok>OK</button>
+      <button class="dlg-btn" data-close>Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Table dialog -->
+<div class="modal-backdrop" id="dlg-table">
+  <div class="dialog" style="width: 360px;">
+    <div class="titlebar">
+      <span class="title">New Table Properties</span>
+      <div class="titlebar-btns"><button class="titlebar-btn" data-close>✕</button></div>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row">
+        <label>Number of rows:</label>
+        <input type="text" id="tbl-rows" value="2">
+      </div>
+      <div class="dialog-row">
+        <label>Number of columns:</label>
+        <input type="text" id="tbl-cols" value="2">
+      </div>
+      <div class="dialog-row">
+        <label>Border line width:</label>
+        <input type="text" id="tbl-border" value="1">
+        <span style="font-size:10px;">pixels</span>
+      </div>
+      <div class="dialog-row">
+        <label>Cell padding:</label>
+        <input type="text" id="tbl-pad" value="2">
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="dlg-btn default" data-tbl-ok>OK</button>
+      <button class="dlg-btn" data-close>Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- AI dialog -->
+<div class="modal-backdrop" id="dlg-ai">
+  <div class="dialog ai-dialog" style="width: 560px;">
+    <div class="titlebar">
+      <span class="title">AI Composer ✦ The Future, Today (Beta)</span>
+      <div class="titlebar-btns"><button class="titlebar-btn" data-close>✕</button></div>
+    </div>
+    <div class="dialog-body">
+      <div style="font-size:11px;">
+        Describe the website you would like the computer to build for you.
+        AI Netscape will replace the current document with a complete,
+        state-of-the-art HTML page generated by our AI Composer&trade; engine.
+      </div>
+      <div class="dialog-row" style="align-items:flex-start;">
+        <label style="padding-top:4px;">Prompt:</label>
+        <textarea id="ai-prompt" placeholder="A landing page for a third-wave coffee roaster with a hero, menu, and newsletter signup..."></textarea>
+      </div>
+      <div class="ai-examples">
+        <div class="ai-example" data-example="A landing page for a venture-backed AI startup called Lumen that builds memory for agents. Hero, three features, a customer logo wall, and a CTA.">Lumen AI startup</div>
+        <div class="ai-example" data-example="A personal portfolio for a designer named Mira Chen with a hero, six project cards, and a contact section. Editorial typography.">Designer portfolio</div>
+        <div class="ai-example" data-example="A pitch page for a SaaS that helps founders auto-apply to YC. Bold, opinionated typography. Hero with strong claim, problem, solution, pricing table.">YC SaaS pitch</div>
+        <div class="ai-example" data-example="A modern restaurant homepage for a Tokyo-inspired ramen bar. Atmospheric, dark, with menu, hours, and reservation CTA.">Ramen bar</div>
+      </div>
+      <div class="ai-status" id="ai-status">Ready.</div>
+    </div>
+    <div class="dialog-footer">
+      <button class="dlg-btn default" id="ai-go">Generate</button>
+      <button class="dlg-btn" data-close>Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generic alert dialog (for fake "publish" etc) -->
+<div class="modal-backdrop" id="dlg-alert">
+  <div class="dialog" style="width: 360px;">
+    <div class="titlebar">
+      <span class="title" id="alert-title">AI Netscape</span>
+      <div class="titlebar-btns"><button class="titlebar-btn" data-close>✕</button></div>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row">
+        <div style="font-size:24px; line-height:1; margin-right:4px;">ℹ</div>
+        <div id="alert-msg" style="font-size:11px; line-height:1.5;">Message goes here.</div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="dlg-btn default" data-close>OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ============================================================
+  // Composer-era WYSIWYG using document.execCommand. Yes, that's
+  // exactly the brutal technology we want. It even still works.
+  // ============================================================
+  const editor = document.getElementById('editor');
+  const sourceView = document.getElementById('source-view');
+  const statusMsg = document.getElementById('status-msg');
+  const statusTags = document.getElementById('status-tags');
+  const statusClock = document.getElementById('status-clock');
+  const docTitle = document.getElementById('doc-title');
+  const toast = document.getElementById('toast');
+
+  let savedSelection = null;
+  let inSourceMode = false;
+  let currentHTML = ''; // backing store
+
+  // ---- Selection persistence (for dialogs) ----
+  function saveSelection() {
+    const sel = window.getSelection();
+    if (sel.rangeCount > 0) savedSelection = sel.getRangeAt(0).cloneRange();
+  }
+  function restoreSelection() {
+    if (!savedSelection) return;
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedSelection);
+  }
+
+  // ---- Status clock ----
+  function tickClock() {
+    const d = new Date();
+    statusClock.textContent =
+      String(d.getHours()).padStart(2,'0') + ':' +
+      String(d.getMinutes()).padStart(2,'0');
+  }
+  setInterval(tickClock, 1000); tickClock();
+
+  // ---- Status: which tags surround the caret ----
+  function updateTagPath() {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) { statusTags.textContent = '<body>'; return; }
+    let node = sel.getRangeAt(0).startContainer;
+    const path = [];
+    while (node && node !== editor && path.length < 6) {
+      if (node.nodeType === 1) path.unshift('<' + node.tagName.toLowerCase() + '>');
+      node = node.parentNode;
+    }
+    statusTags.textContent = '<body>' + path.join('');
+  }
+  editor.addEventListener('keyup', updateTagPath);
+  editor.addEventListener('mouseup', updateTagPath);
+
+  // ---- Status: short-lived message ----
+  function setStatus(msg) {
+    statusMsg.textContent = msg;
+    clearTimeout(setStatus._t);
+    setStatus._t = setTimeout(() => statusMsg.textContent = 'Document: Done', 3500);
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+
+  // ---- Formatting toolbar ----
+  function exec(cmd, val=null) {
+    editor.focus();
+    document.execCommand(cmd, false, val);
+    updateTagPath();
+  }
+
+  document.querySelectorAll('.fbtn[data-cmd]').forEach(b => {
+    b.addEventListener('mousedown', e => e.preventDefault()); // keep selection
+    b.addEventListener('click', () => exec(b.dataset.cmd));
+  });
+
+  document.getElementById('paragraph-style').addEventListener('change', e => {
+    exec('formatBlock', e.target.value);
+    e.target.blur();
+  });
+  document.getElementById('font-face').addEventListener('change', e => {
+    if (e.target.value) exec('fontName', e.target.value);
+    e.target.blur();
+  });
+  document.getElementById('font-size').addEventListener('change', e => {
+    exec('fontSize', e.target.value);
+    e.target.blur();
+  });
+  document.getElementById('font-color').addEventListener('input', e => {
+    exec('foreColor', e.target.value);
+  });
+
+  // ---- Toolbar buttons ----
+  document.getElementById('main-toolbar').addEventListener('click', e => {
+    const btn = e.target.closest('.tbtn');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    switch (action) {
+      case 'new':     newDoc(); break;
+      case 'open':    openDoc(); break;
+      case 'save':    saveDoc(); break;
+      case 'publish': showAlert('Publish to Web', 'Connecting to FTP server...\n\nCould not connect to publish target. (Service temporarily offline.)'); break;
+      case 'preview': preview(); break;
+      case 'source':  toggleSource(); break;
+      case 'link':    saveSelection(); openDialog('dlg-link'); break;
+      case 'anchor':  insertAnchor(); break;
+      case 'image':   saveSelection(); openDialog('dlg-image'); break;
+      case 'hline':   exec('insertHorizontalRule'); break;
+      case 'table':   saveSelection(); openDialog('dlg-table'); break;
+      case 'spell':   showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)'); break;
+      case 'ai':      openDialog('dlg-ai'); document.getElementById('ai-prompt').focus(); break;
+    }
+  });
+
+  // ---- File ops ----
+  function newDoc() {
+    if (!confirm('Discard current document and start a new one?')) return;
+    editor.innerHTML = '<p><br></p>';
+    docTitle.textContent = 'Untitled';
+    setStatus('New document created.');
+  }
+  function saveDoc() {
+    const title = prompt('Page title:', docTitle.textContent) || docTitle.textContent;
+    docTitle.textContent = title;
+    const html = wrapAsFullPage(editor.innerHTML, title);
+    const blob = new Blob([html], {type: 'text/html'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (title || 'index') + '.htm';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('Saved as ' + a.download);
+  }
+  function openDoc() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.htm,.html,text/html';
+    input.onchange = () => {
+      const f = input.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        // Strip out everything outside <body> if it's a full page, else use as-is.
+        const txt = r.result;
+        const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(txt);
+        editor.innerHTML = body ? body[1] : txt;
+        const t = /<title>([\s\S]*?)<\/title>/i.exec(txt);
+        if (t) docTitle.textContent = t[1].trim();
+        setStatus('Opened ' + f.name);
+      };
+      r.readAsText(f);
+    };
+    input.click();
+  }
+
+  function wrapAsFullPage(bodyHTML, title) {
+    return `<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>${escapeHTML(title || 'Untitled')}</TITLE>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<META NAME="GENERATOR" CONTENT="Mozilla/4.7 [en] (Win98; U) [AI Netscape]">
+</HEAD>
+<BODY>
+${bodyHTML}
+</BODY>
+</HTML>`;
+  }
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  function preview() {
+    const html = wrapAsFullPage(editor.innerHTML, docTitle.textContent);
+    const w = window.open('', '_blank');
+    w.document.open(); w.document.write(html); w.document.close();
+  }
+
+  function toggleSource() {
+    if (!inSourceMode) {
+      sourceView.value = formatHTML(editor.innerHTML);
+      editor.parentElement.style.display = 'none';
+      sourceView.style.display = 'block';
+      sourceView.focus();
+      inSourceMode = true;
+      setStatus('Viewing HTML source.');
+    } else {
+      editor.innerHTML = sourceView.value;
+      editor.parentElement.style.display = 'block';
+      sourceView.style.display = 'none';
+      inSourceMode = false;
+      setStatus('Returned to WYSIWYG.');
+    }
+  }
+
+  // Quick & dirty pretty printer to look like Composer-saved HTML
+  function formatHTML(html) {
+    let s = html.replace(/></g, '>\n<');
+    // indent very loosely
+    let depth = 0, out = '';
+    s.split('\n').forEach(line => {
+      const open = /^<[^!/?][^>]*[^/]>$/.test(line.trim()) && !/^<(br|hr|img|input|meta|link)/i.test(line.trim());
+      const close = /^<\//.test(line.trim());
+      if (close) depth = Math.max(0, depth - 1);
+      out += '  '.repeat(depth) + line.trim() + '\n';
+      if (open) depth++;
+    });
+    return out.trim();
+  }
+
+  // ---- Link / Image / Table / Anchor inserts ----
+  function openDialog(id) { document.getElementById(id).classList.add('open'); }
+  function closeDialog(el) {
+    const d = el.closest('.modal-backdrop');
+    if (d) d.classList.remove('open');
+  }
+  document.querySelectorAll('[data-close]').forEach(el =>
+    el.addEventListener('click', () => closeDialog(el))
+  );
+  document.querySelectorAll('.modal-backdrop').forEach(bg => {
+    bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
+  });
+
+  document.querySelector('[data-link-ok]').addEventListener('click', () => {
+    const url = document.getElementById('link-url').value.trim();
+    const text = document.getElementById('link-text').value.trim();
+    if (!url) return;
+    restoreSelection();
+    editor.focus();
+    if (savedSelection && savedSelection.toString()) {
+      exec('createLink', url);
+    } else {
+      const a = `<a href="${escapeHTML(url)}">${escapeHTML(text || url)}</a>`;
+      exec('insertHTML', a);
+    }
+    document.getElementById('dlg-link').classList.remove('open');
+    document.getElementById('link-url').value = '';
+    document.getElementById('link-text').value = '';
+  });
+
+  document.querySelector('[data-img-ok]').addEventListener('click', () => {
+    const src = document.getElementById('img-src').value.trim();
+    if (!src) return;
+    const alt = document.getElementById('img-alt').value.trim();
+    const w = document.getElementById('img-w').value.trim();
+    const h = document.getElementById('img-h').value.trim();
+    const align = document.getElementById('img-align').value;
+    let tag = `<img src="${escapeHTML(src)}" alt="${escapeHTML(alt)}"`;
+    if (w) tag += ` width="${escapeHTML(w)}"`;
+    if (h) tag += ` height="${escapeHTML(h)}"`;
+    if (align) tag += ` align="${escapeHTML(align)}"`;
+    tag += '>';
+    restoreSelection();
+    editor.focus();
+    exec('insertHTML', tag);
+    document.getElementById('dlg-image').classList.remove('open');
+    ['img-src','img-alt','img-w','img-h'].forEach(id => document.getElementById(id).value = '');
+  });
+
+  document.querySelector('[data-tbl-ok]').addEventListener('click', () => {
+    const r = parseInt(document.getElementById('tbl-rows').value, 10) || 2;
+    const c = parseInt(document.getElementById('tbl-cols').value, 10) || 2;
+    const b = parseInt(document.getElementById('tbl-border').value, 10) || 0;
+    const p = parseInt(document.getElementById('tbl-pad').value, 10) || 0;
+    let html = `<table border="${b}" cellpadding="${p}" cellspacing="0">`;
+    for (let i=0;i<r;i++) {
+      html += '<tr>';
+      for (let j=0;j<c;j++) html += '<td>&nbsp;</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    restoreSelection();
+    editor.focus();
+    exec('insertHTML', html);
+    document.getElementById('dlg-table').classList.remove('open');
+  });
+
+  function insertAnchor() {
+    const name = prompt('Name of the named anchor:', '');
+    if (!name) return;
+    exec('insertHTML', `<a name="${escapeHTML(name)}"></a>`);
+  }
+
+  function showAlert(title, msg) {
+    document.getElementById('alert-title').textContent = title;
+    document.getElementById('alert-msg').innerText = msg;
+    openDialog('dlg-alert');
+  }
+
+  // ============================================================
+  // THE AI BUTTON
+  // Calls Claude via the artifact's Anthropic API access. Asks it
+  // to generate a complete modern HTML page, then drops that page
+  // straight into Composer. The juxtaposition is the joke.
+  // ============================================================
+  const aiPrompt = document.getElementById('ai-prompt');
+  const aiStatus = document.getElementById('ai-status');
+  const aiGo = document.getElementById('ai-go');
+
+  document.querySelectorAll('.ai-example').forEach(el => {
+    el.addEventListener('click', () => { aiPrompt.value = el.dataset.example; aiPrompt.focus(); });
+  });
+
+  aiGo.addEventListener('click', generateWithAI);
+
+  async function generateWithAI() {
+    const userBrief = aiPrompt.value.trim();
+    if (!userBrief) { aiStatus.textContent = 'Please describe what you want.'; return; }
+    aiGo.disabled = true;
+    aiStatus.innerHTML = '<span class="ai-spinner"></span> Asking the mainframe...';
+
+    const systemMessage =
+      "You are a senior frontend designer in 2026. Given a brief, return a SINGLE complete modern HTML document. " +
+      "Requirements:\n" +
+      "- Output ONLY raw HTML starting with <!DOCTYPE html>. No markdown, no code fences, no commentary.\n" +
+      "- One self-contained file: all CSS in <style>, any JS in <script>, no external libraries except Google Fonts via <link>.\n" +
+      "- Cutting-edge aesthetic: deliberate typography, opinionated layout, real visual hierarchy. Pick a strong design direction (editorial, brutalist, refined minimalist, neo-luxury, etc) — never generic.\n" +
+      "- Beautiful semantic structure. Real content for the brief, not lorem ipsum. Plausible details.\n" +
+      "- Mobile-responsive. Subtle motion is welcome but not required.\n" +
+      "- Absolutely no purple-on-white gradients or generic AI-startup aesthetics.\n" +
+      "- The page must be visually striking enough that a partner at Andreessen Horowitz would think 'who shipped this'.";
+
+    try {
+      const resp = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system: systemMessage,
+          brief: userBrief
+        })
+      });
+      if (!resp.ok) throw new Error('API error ' + resp.status);
+      const data = await resp.json();
+      const text = data.content
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+        .trim();
+
+      // Strip code fences if Claude added them despite instructions
+      let html = text.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+
+      // Pull body for the editor, but stash the full page for preview/save
+      const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+      const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
+      const headStyleMatches = [...html.matchAll(/<style[\s\S]*?<\/style>/gi)];
+      const headLinkMatches = [...html.matchAll(/<link[^>]*>/gi)];
+
+      // We inject the styles + links inline at the top of the editor body so the
+      // generated design actually renders inside Composer's editing surface.
+      // (Yes, that is hilariously brutal. That is the point.)
+      let injected = '';
+      headLinkMatches.forEach(m => { injected += m[0]; });
+      headStyleMatches.forEach(m => { injected += m[0]; });
+
+      const newBody = (bodyMatch ? bodyMatch[1] : html);
+
+      editor.innerHTML = injected + newBody;
+      if (titleMatch) docTitle.textContent = titleMatch[1].trim();
+
+      document.getElementById('dlg-ai').classList.remove('open');
+      aiStatus.textContent = 'Ready.';
+      showToast('Document generated successfully.');
+      setStatus('Document generated by AI Composer.');
+    } catch (err) {
+      aiStatus.textContent = 'Error: ' + err.message;
+    } finally {
+      aiGo.disabled = false;
+    }
+  }
+
+  // ============================================================
+  // Easter egg: F1 shows the help dialog
+  // ============================================================
+  document.addEventListener('keydown', e => {
+    if (e.key === 'F1') {
+      e.preventDefault();
+      showAlert('About AI Netscape',
+        'AI Netscape 4.7\n\n' +
+        '© 1997 AI Netscape\n' +
+        'All Rights Reserved.\n\n' +
+        'Now featuring one-click HTML one-page website generation powered by our proprietary ' +
+        'AI Composer\u2122 engine. Best viewed at minimum 800x600 in 256 colors or better.\n\n' +
+        'For technical support, dial 1-800-AINETSCAPE.');
+    }
+  });
+
+  // Initialize source/preview parity
+  editor.addEventListener('input', updateTagPath);
+  updateTagPath();
+</script>
+
+</body>
+</html>
