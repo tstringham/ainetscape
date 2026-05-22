@@ -18,19 +18,21 @@ A recreation of a 1997 HTML composer with one anachronistic addition: an
 
 ```
 ainetscape/
-├── index.html            # The whole UI: chrome, editor, dialogs, AI Composer
+├── public/                 # Served at the site root by Vercel
+│   ├── index.html          # The whole UI: chrome, editor, dialogs, AI Composer
+│   ├── favicon.ico/.svg    # + apple-touch-icon.png
+│   └── og-image.png        # 1200x630 social card
 ├── api/
-│   ├── generate.js       # Anthropic proxy: system prompt, rate limit, cache
-│   └── _db.js            # Optional Mongo logging helper (loaded only if enabled)
-├── public/               # favicon.ico/.svg, apple-touch-icon.png, og-image.png
+│   ├── generate.js         # Anthropic proxy: system prompt, rate limit, cache
+│   └── _db.js              # Optional Mongo logging helper (loaded only if enabled)
 ├── scripts/
-│   ├── build_favicons.py # Generates the favicons (needs Pillow)
-│   ├── og-template.html  # 1200x630 social-card source
-│   └── build_og.mjs      # Renders og-template.html -> public/og-image.png
-├── vercel.json           # Security headers, function config
+│   ├── build_favicons.py   # Generates the favicons (needs Pillow)
+│   ├── og-template.html    # 1200x630 social-card source
+│   └── build_og.mjs        # Renders og-template.html -> public/og-image.png
+├── vercel.json             # Security headers, function config
 ├── package.json
 ├── .env.example
-├── DEPLOYMENT.md         # Step-by-step deploy guide
+├── DEPLOYMENT.md           # Step-by-step deploy guide
 └── README.md
 ```
 
