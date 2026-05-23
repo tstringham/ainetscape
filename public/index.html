@@ -1321,6 +1321,7 @@ class ModemSynth {
     this.ctx = null;
     this.master = null;
     this.activeNodes = [];
+    this.speed = 1;       // 1 = 28.8 kbps, 0.5 = 56k v.90 (2x faster)
   }
 
   ensureContext() {
@@ -1366,16 +1367,16 @@ class ModemSynth {
     this.activeNodes.push(src);
   }
 
-  dtmfDial(startTime) {
+  dtmfDial(startTime, s = 1) {
     // Fake dial sequence: a few quick DTMF tones (just for vibes, not a real number)
     const digits = [
       [697, 1209], [697, 1336], [770, 1209], [852, 1477], [697, 1336]
     ];
     let t = startTime;
     digits.forEach(([low, high]) => {
-      this.tone(low, t, 0.07, 0.4);
-      this.tone(high, t, 0.07, 0.4);
-      t += 0.12;
+      this.tone(low, t, 0.07 * s, 0.4);
+      this.tone(high, t, 0.07 * s, 0.4);
+      t += 0.12 * s;
     });
     return t;
   }
@@ -1384,53 +1385,121 @@ class ModemSynth {
     this.ensureContext();
     if (this.ctx.state === 'suspended') await this.ctx.resume();
 
+    const s = this.speed || 1;
     let t = this.ctx.currentTime;
 
     // 1. Dial tone
-    this.tone(350, t, 0.4, 0.3);
-    this.tone(440, t, 0.4, 0.3);
-    t += 0.5;
+    this.tone(350, t, 0.4 * s, 0.3);
+    this.tone(440, t, 0.4 * s, 0.3);
+    t += 0.5 * s;
 
     // 2. DTMF dial sequence
-    t = this.dtmfDial(t);
-    t += 0.2;
+    t = this.dtmfDial(t, s);
+    t += 0.2 * s;
 
     // 3. Connection handshake — the iconic part
-    this.tone(2100, t, 0.35, 0.5);
-    t += 0.4;
-    this.tone(1100, t, 0.25, 0.4);
-    this.tone(1750, t + 0.1, 0.5, 0.5);
-    t += 0.7;
+    this.tone(2100, t, 0.35 * s, 0.5);
+    t += 0.4 * s;
+    this.tone(1100, t, 0.25 * s, 0.4);
+    this.tone(1750, t + 0.1 * s, 0.5 * s, 0.5);
+    t += 0.7 * s;
 
     // 4. V.34 handshake noise burst — the shriek
-    this.noise(t, 0.8, 0.7);
-    this.tone(1450, t, 0.3, 0.4);
-    this.tone(1850, t + 0.3, 0.3, 0.4);
-    t += 0.9;
+    this.noise(t, 0.8 * s, 0.7);
+    this.tone(1450, t, 0.3 * s, 0.4);
+    this.tone(1850, t + 0.3 * s, 0.3 * s, 0.4);
+    t += 0.9 * s;
 
     // 5. Modulation chirps
     for (let i = 0; i < 4; i++) {
-      this.tone(900 + Math.random() * 800, t, 0.12, 0.4);
-      t += 0.13;
+      this.tone(900 + Math.random() * 800, t, 0.12 * s, 0.4);
+      t += 0.13 * s;
     }
 
     // 6. White noise sustain — the "data is flowing" sound
-    this.noise(t, 2.0, 0.5);
-    this.tone(2200, t, 1.5, 0.25);
-    this.tone(1100, t + 0.2, 1.3, 0.25);
-    t += 2.0;
+    this.noise(t, 2.0 * s, 0.5);
+    this.tone(2200, t, 1.5 * s, 0.25);
+    this.tone(1100, t + 0.2 * s, 1.3 * s, 0.25);
+    t += 2.0 * s;
 
     // Return total duration in seconds so the caller can align the UI
     return t - this.ctx.currentTime;
   }
 
+  // The hang-up. Carrier crashes downward, receiver hits the cradle, a brief
+  // dial-tone blip leaks through, then one final off-hook click. Total ~0.7s.
+  hangup() {
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    const t = this.ctx.currentTime;
+    // Carrier crashes down
+    this.sweepTone(1100, 80, t, 0.20, 0.30);
+    this.sweepTone(2200, 80, t, 0.20, 0.30);
+    // Receiver hits the cradle
+    this.noise(t + 0.22, 0.04, 0.7);
+    // Brief dial-tone leak before the line cuts
+    this.tone(350, t + 0.32, 0.25, 0.18);
+    this.tone(440, t + 0.32, 0.25, 0.18);
+    // Final off-hook click
+    this.noise(t + 0.60, 0.03, 0.5);
+  }
+
+  // Linear frequency sweep — like tone() but with a freq ramp over the span.
+  sweepTone(freqStart, freqEnd, startTime, duration, gain = 1) {
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freqStart, startTime);
+    osc.frequency.linearRampToValueAtTime(freqEnd, startTime + duration);
+    g.gain.setValueAtTime(0, startTime);
+    g.gain.linearRampToValueAtTime(gain, startTime + 0.02);
+    g.gain.setValueAtTime(gain, startTime + duration - 0.02);
+    g.gain.linearRampToValueAtTime(0, startTime + duration);
+    osc.connect(g);
+    g.connect(this.master);
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+    this.activeNodes.push(osc);
+  }
+
   // Soft carrier hum — looped while a long request is still in flight.
+  // Rotates through textures so the wait doesn't hang on one note. A real
+  // V.34/V.90 call drifts through carrier, training, and data phases; this
+  // picks a different texture on each tick to mimic that movement.
   hum(duration = 4) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.noise(t, duration, 0.16);
-    this.tone(2200, t, duration, 0.10);
-    this.tone(1100, t + 0.1, duration - 0.1, 0.10);
+    this.noise(t, duration, 0.13);
+
+    // Pick a variant — never the same one twice in a row.
+    let v;
+    do { v = Math.floor(Math.random() * 4); } while (v === this._lastHum);
+    this._lastHum = v;
+
+    if (v === 0) {
+      // Steady carrier — the original sound, kept as one of four.
+      this.tone(2200, t, duration, 0.10);
+      this.tone(1100, t + 0.1, duration - 0.1, 0.10);
+    } else if (v === 1) {
+      // Slow sweep — drifting tone, the carrier locking in.
+      this.sweepTone(1400, 2100, t, duration / 2, 0.10);
+      this.sweepTone(2100, 1400, t + duration / 2, duration / 2, 0.10);
+      this.tone(900, t, duration, 0.07);
+    } else if (v === 2) {
+      // Two-tone warble — alternating notes, data-packet feel.
+      const step = 0.35;
+      for (let cursor = t, hi = true; cursor < t + duration; cursor += step, hi = !hi) {
+        this.tone(hi ? 1900 : 1450, cursor, step + 0.05, 0.10);
+      }
+    } else {
+      // Ascending training steps — V.34 negotiation feel.
+      const steps = 5;
+      const sd = duration / steps;
+      for (let i = 0; i < steps; i++) {
+        this.tone(1000 + i * 260, t + i * sd, sd + 0.05, 0.09);
+      }
+      this.tone(700, t, duration, 0.06);
+    }
   }
 
   stop() {
@@ -1446,16 +1515,16 @@ let modemTimers = [];
 function clearModemTimers() { modemTimers.forEach(clearTimeout); modemTimers = []; }
 function stopModemAll() { clearModemTimers(); modem.stop(); }
 
-// Disconnect chime: bright pair on success, descending triplet on failure.
+// Disconnect: full hang-up on success, descending failure triplet on error.
+// Audio plays by default — only reduceMotion users get silence.
 function playDisconnect(success) {
-  if (!modemUpgraded) return;
+  if (reduceMotion) return;
   try {
     modem.ensureContext();
-    const t = modem.ctx.currentTime;
     if (success) {
-      modem.tone(800, t, 0.2, 0.3);
-      modem.tone(400, t + 0.2, 0.3, 0.3);
+      modem.hangup();
     } else {
+      const t = modem.ctx.currentTime;
       modem.tone(400, t, 0.15, 0.3);
       modem.tone(300, t + 0.2, 0.15, 0.3);
       modem.tone(200, t + 0.4, 0.4, 0.3);
@@ -1465,11 +1534,11 @@ function playDisconnect(success) {
 
 // Play the handshake, then loop a soft carrier hum if the request runs long.
 function playModemSequence() {
-  if (!modemUpgraded) return;
+  if (reduceMotion) return;
   modem.play().then(durSec => {
     const durMs = (durSec || 7.5) * 1000;
     const humLoop = () => {
-      if (!aiInFlight || !modemUpgraded) return;
+      if (!aiInFlight || reduceMotion) return;
       try { modem.hum(4); } catch (_) {}
       modemTimers.push(setTimeout(humLoop, 3800));
     };
@@ -1486,6 +1555,7 @@ let modemUpgraded = lsGet('modem-upgraded') === '1';
 
 function applyUpgradeUI() {
   const speed = document.getElementById('modem-speed');
+  modem.speed = modemUpgraded ? 0.5 : 1;
   if (modemUpgraded) {
     upgradeBtn.classList.add('upgraded');
     speed.textContent = '56k v.90';
@@ -1493,7 +1563,7 @@ function applyUpgradeUI() {
   } else {
     upgradeBtn.classList.remove('upgraded');
     speed.textContent = '28.8 kbps';
-    upgradeBtn.title = 'Upgrade your connection to 56k for authentic modem audio.';
+    upgradeBtn.title = 'Upgrade your connection to 56k v.90 for 2x faster modem audio.';
   }
 }
 applyUpgradeUI();
@@ -1508,18 +1578,22 @@ upgradeBtn.addEventListener('click', () => {
   modemUpgraded = !modemUpgraded;
   lsSet('modem-upgraded', modemUpgraded ? '1' : '0');
   applyUpgradeUI();
-  if (modemUpgraded) {
-    try {
-      modem.ensureContext();
-      if (modem.ctx.state === 'suspended') modem.ctx.resume();
-      const t = modem.ctx.currentTime;
-      modem.tone(800, t, 0.1, 0.3);
+  try {
+    modem.ensureContext();
+    if (modem.ctx.state === 'suspended') modem.ctx.resume();
+    const t = modem.ctx.currentTime;
+    if (modemUpgraded) {
+      modem.tone(800,  t,        0.1,  0.3);
       modem.tone(1200, t + 0.12, 0.15, 0.3);
-    } catch (_) {}
-    showToast('Connection upgraded to 56k v.90. Modem audio enabled.');
+    } else {
+      modem.tone(1200, t,        0.1,  0.3);
+      modem.tone(800,  t + 0.12, 0.15, 0.3);
+    }
+  } catch (_) {}
+  if (modemUpgraded) {
+    showToast('Connection upgraded to 56k v.90. Modem audio at 2× speed.');
   } else {
-    stopModemAll();
-    showToast('Connection downgraded to 28.8 kbps. Modem audio disabled.');
+    showToast('Connection downgraded to 28.8 kbps. Modem audio at normal speed.');
   }
 });
 
@@ -2055,6 +2129,23 @@ document.addEventListener('keydown', e => {
 // Initialize tag-path tracking
 editor.addEventListener('input', updateTagPath);
 updateTagPath();
+
+// contentEditable swallows link clicks (the cursor lands inside the anchor
+// instead of navigating). The footer mailto and any future hrefs inside the
+// editor would otherwise look broken. Intercept clicks on anchors and open
+// the link explicitly — mailto via location.href, external via a new tab.
+editor.addEventListener('click', (e) => {
+  const a = e.target && e.target.closest && e.target.closest('a[href]');
+  if (!a) return;
+  const href = a.getAttribute('href') || '';
+  if (href.startsWith('mailto:')) {
+    e.preventDefault();
+    window.location.href = href;
+  } else if (/^https?:\/\//i.test(href)) {
+    e.preventDefault();
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }
+});
 </script>
 
 </body>

@@ -100,8 +100,12 @@ CNAME  www   cname.vercel-dns.com
 The site references `webmaster@ainetscape.com`. Set up forwarding:
 
 - GoDaddy → AINetscape.com → Email & Office → Email Forwarding
-- `webmaster@ainetscape.com → thomas@trainflow.ai`
-- catch-all: `*@ainetscape.com → thomas@trainflow.ai`
+- `webmaster@ainetscape.com → <your real inbox>`
+- catch-all: `*@ainetscape.com → <your real inbox>`
+
+The forwarding destination is configured in GoDaddy UI only — never written
+into the repo or anywhere on the site. The only address that appears in
+any user-facing context is `webmaster@ainetscape.com`.
 
 Verify:
 
