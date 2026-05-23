@@ -1734,16 +1734,36 @@ document.querySelectorAll('[data-close-ai]').forEach(el =>
   el.addEventListener('click', closeAIDialog)
 );
 
-// ---- Loading-state choreography (timed to the modem handshake) ----
-const LOADING_STEPS = [
-  [0,     'Dialing 1-800-AINETSCAPE...'],
-  [700,   'Connecting to remote host...'],
-  [1500,  'Negotiating V.34 handshake...'],
-  [3000,  'Authenticating...'],
-  [4500,  'Receiving data...'],
-  [6000,  'Almost there...'],
-  [15000, 'Still receiving... (this is a big one)']
+// ---- Loading-state choreography ----
+// The text stages run on a fixed schedule from the moment we transition
+// into the generate phase (after triage). The progress bar is separately
+// driven by real bytes-received from the stream, so the bar can never
+// outrun the response — it always lands at 100% only after the build is
+// applied to the editor.
+const LOADING_STAGES = [
+  { at: 0,    text: 'Dialing 1-800-AINETSCAPE...' },
+  { at: 1.2,  text: 'Connecting to remote host...' },
+  { at: 2.5,  text: 'Negotiating V.34 handshake...' },
+  { at: 4.0,  text: 'Authenticating session...' },
+  { at: 5.5,  text: 'Sending compose request...' },
+  { at: 7.0,  text: 'Allocating server resources...' },
+  { at: 9.0,  text: 'Asking the AI very politely...' },
+  { at: 11.0, text: 'Considering color palettes...' },
+  { at: 13.0, text: 'Rejecting Helvetica...' },
+  { at: 15.0, text: 'Reading reference manuals...' },
+  { at: 17.0, text: 'Compiling response...' },
+  { at: 19.0, text: 'Generating page structure...' },
+  { at: 22.0, text: 'Receiving data...' },
+  { at: 25.0, text: 'Almost there...' },
+  { at: 28.0, text: 'Just a few more bits...' },
+  { at: 32.0, text: 'The line is slow today...' },
+  { at: 40.0, text: 'Still receiving... (this is a big one)' }
 ];
+
+// Progress baseline — roughly the output-token count of a typical full
+// build. The bar advances tokens / TOKEN_BASELINE up to a 95% ceiling, and
+// only snaps to 100% when the editor actually receives the page.
+const TOKEN_BASELINE = 6000;
 
 function clearLoadingTimers() { loadingTimers.forEach(clearTimeout); loadingTimers = []; }
 
@@ -1751,24 +1771,40 @@ function renderLoadingState() {
   aiDialogBody.innerHTML =
     '<div class="ai-loading">' +
       '<div class="ai-loading-row"><span class="ai-spinner"></span>' +
-      '<span class="ai-loading-line" id="ai-loading-line">Dialing 1-800-AINETSCAPE...</span></div>' +
+      '<span class="ai-loading-line" id="ai-loading-line">Analyzing request...</span></div>' +
       '<div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>' +
     '</div>';
   aiDialogFooter.innerHTML = '<button class="dlg-btn" id="ai-cancel">Cancel</button>';
+  const bar = document.getElementById('ai-progress-bar');
+  if (bar) bar.style.width = '0%';
   const c = document.getElementById('ai-cancel');
   if (c) c.addEventListener('click', cancelGeneration);
 }
 
+function setLoadingLine(msg) {
+  const line = document.getElementById('ai-loading-line');
+  if (line) line.textContent = msg;
+}
+
 function startLoadingChoreography() {
   clearLoadingTimers();
-  LOADING_STEPS.forEach((step, idx) => {
-    loadingTimers.push(setTimeout(() => {
-      const line = document.getElementById('ai-loading-line');
-      const bar  = document.getElementById('ai-progress-bar');
-      if (line) line.textContent = step[1];
-      if (bar)  bar.style.width = Math.min(95, 10 + idx * 14) + '%';
-    }, step[0]));
+  LOADING_STAGES.forEach(stage => {
+    loadingTimers.push(setTimeout(() => setLoadingLine(stage.text), stage.at * 1000));
   });
+}
+
+function updateTokenProgress(accumulatedText) {
+  const bar = document.getElementById('ai-progress-bar');
+  if (!bar) return;
+  // chars/4 is the standard rough-token estimate; close enough for a bar.
+  const tokens = accumulatedText.length / 4;
+  const pct = Math.min(95, (tokens / TOKEN_BASELINE) * 100);
+  bar.style.width = pct.toFixed(1) + '%';
+}
+
+function snapProgressToComplete() {
+  const bar = document.getElementById('ai-progress-bar');
+  if (bar) bar.style.width = '100%';
 }
 
 // ---- Referral capture (?ref=) ----
@@ -1781,7 +1817,43 @@ function captureRef() {
 function getRef() { return ssGet('ainetscape-ref') || null; }
 captureRef();
 
+// ---- POST to an endpoint and stream the response body as text ----
+// Both /api/triage and /api/generate return text/plain streams. The triage
+// stream is one short verdict line; the generate stream is the full page.
+async function postAndStream(url, body, signal, onChunkArrive, onProgress) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    let serverMsg = '';
+    try { const j = await resp.json(); serverMsg = (j && j.error) || ''; } catch (_) {}
+    const e = new Error('HTTP ' + resp.status + (serverMsg ? ': ' + serverMsg : ''));
+    e.status = resp.status;
+    throw e;
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+    if (onChunkArrive) onChunkArrive();
+    if (onProgress) onProgress(text);
+  }
+  return text;
+}
+
 // ---- The generation flow ----
+// Phase 1: /api/triage classifies the brief in ~1s with Haiku 4.5. If the
+// verdict is a warn or refuse, render the modal immediately and never call
+// the expensive build endpoint. If it's 'build' (or the user pressed Try
+// Anyway, which sets forceBuild and skips triage entirely), continue to:
+// Phase 2: /api/generate streams the HTML page back, with the progress bar
+// driven by real bytes received from the stream.
 async function generateWithAI(opts) {
   opts = opts || {};
   if (aiInFlight) return;                  // no double-submit while in flight
@@ -1798,16 +1870,12 @@ async function generateWithAI(opts) {
 
   aiInFlight = true;
   abortReason = null;
-  renderLoadingState();
-  startLoadingChoreography();
-  playModemSequence();
+  renderLoadingState();   // shows "Analyzing request..." with the bar at 0%
 
   currentAbort = new AbortController();
 
-  // Silence timer: aborts only if the stream goes idle (no chunks for N ms),
-  // not on total elapsed time. Re-armed on each chunk. 30s of silence is
-  // generous for a healthy upstream — if it's been quiet that long, the
-  // line really has dropped.
+  // Silence watchdog: 30s of no chunks on either endpoint = the line
+  // dropped. Re-armed on each chunk.
   const STREAM_SILENCE_MS = 30000;
   let silenceTimerId = null;
   const armSilence = () => {
@@ -1820,39 +1888,52 @@ async function generateWithAI(opts) {
   armSilence();
 
   try {
-    const resp = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: currentAbort.signal,
-      body: JSON.stringify({ brief: userBrief, ref: getRef(), forceBuild: !!opts.forceBuild })
-    });
+    // -------- Phase 1: triage (skipped on Try Anyway) --------
+    if (!opts.forceBuild) {
+      const triageText = await postAndStream(
+        '/api/triage',
+        { brief: userBrief, ref: getRef() },
+        currentAbort.signal,
+        armSilence
+      );
+      const tm = (triageText || '').trim().match(/^TRIAGE::(\w+)$/);
+      const verdict = tm && tm[1];
 
-    if (!resp.ok) {
-      if (silenceTimerId) clearTimeout(silenceTimerId);
-      let serverMsg = '';
-      try { const j = await resp.json(); serverMsg = (j && j.error) || ''; } catch (_) {}
-      const e = new Error('HTTP ' + resp.status + (serverMsg ? ': ' + serverMsg : ''));
-      e.status = resp.status;
-      throw e;
+      if (verdict && verdict.indexOf('warn_') === 0) {
+        if (silenceTimerId) clearTimeout(silenceTimerId);
+        clearLoadingTimers();
+        renderWarning(verdict, userBrief);
+        return;
+      }
+      if (verdict && verdict.indexOf('refuse_') === 0) {
+        if (silenceTimerId) clearTimeout(silenceTimerId);
+        clearLoadingTimers();
+        renderRefusal(verdict);
+        return;
+      }
+      // verdict === 'build' (or unparseable, which we treat as build) →
+      // fall through to phase 2.
     }
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let text = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += decoder.decode(value, { stream: true });
-      armSilence();
-    }
+    // -------- Phase 2: full generation --------
+    setLoadingLine('Dialing 1-800-AINETSCAPE...');
+    startLoadingChoreography();
+    playModemSequence();
+    armSilence();   // reset the watchdog for the long stream
+
+    let text = await postAndStream(
+      '/api/generate',
+      { brief: userBrief, ref: getRef(), forceBuild: !!opts.forceBuild },
+      currentAbort.signal,
+      armSilence,
+      updateTokenProgress
+    );
     if (silenceTimerId) clearTimeout(silenceTimerId);
     text = text.trim();
 
     if (!text) throw new Error('empty response');
 
-    // Server appends this trailer when the upstream model hit its output cap
-    // mid-page. The streamed HTML is incomplete; surface the bandwidth
-    // warning over the existing comedy instead of rendering a broken page.
+    // Server-side mid-stream truncation marker.
     const TRAILER = '<!--TRIAGE_TRAILER:warn_bandwidth_exceeded-->';
     let truncatedMidStream = false;
     if (text.endsWith(TRAILER)) {
@@ -1860,34 +1941,20 @@ async function generateWithAI(opts) {
       text = text.slice(0, -TRAILER.length).trimEnd();
     }
 
-    stopGenerationFx(true);
-
-    if (truncatedMidStream) {
-      renderWarning('warn_bandwidth_exceeded', userBrief);
-      return;
-    }
-
+    // Pre-text truncation marker (server emits the triage line if no HTML
+    // ever made it out — context window filled before output).
     const firstLine = text.split('\n')[0].trim();
-    const m = firstLine.match(/^TRIAGE::(\w+)$/);
+    const isBandwidthLine = firstLine === 'TRIAGE::warn_bandwidth_exceeded';
 
-    // warn_bandwidth_exceeded is server-injected when the upstream model
-    // hits its output cap before any HTML is emitted. Honor it even on the
-    // forceBuild path — retrying would just hit the same truncation.
-    if (m && m[1] === 'warn_bandwidth_exceeded') {
+    if (truncatedMidStream || isBandwidthLine) {
+      stopGenerationFx(true);
       renderWarning('warn_bandwidth_exceeded', userBrief);
       return;
     }
 
-    if (opts.forceBuild) { renderBuild(text, userBrief); return; }
-
-    if (!m) { renderBuild(text, userBrief); return; }
-
-    const verdict = m[1];
-    const rest = text.slice(firstLine.length).trim();
-    if (verdict === 'build')                   renderBuild(rest, userBrief);
-    else if (verdict.indexOf('warn_') === 0)   renderWarning(verdict, userBrief);
-    else if (verdict.indexOf('refuse_') === 0) renderRefusal(verdict);
-    else                                       renderBuild(rest, userBrief);
+    snapProgressToComplete();
+    stopGenerationFx(true);
+    renderBuild(text, userBrief);
 
   } catch (err) {
     if (silenceTimerId) clearTimeout(silenceTimerId);

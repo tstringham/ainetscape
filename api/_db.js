@@ -27,10 +27,14 @@ function hashIp(ip) {
   return crypto.createHash('sha256').update(IP_SALT + String(ip)).digest('hex').slice(0, 16);
 }
 
-export async function logEvent({ ip, brief, data, ref, forceBuild, duration_ms, referrer, user_agent }) {
+export async function logEvent({
+  ip, kind = 'generate', brief, data, ref, forceBuild, duration_ms,
+  referrer, user_agent, verdict
+}) {
   const d = await getDb();
-  await d.collection('generations').insertOne({
+  const doc = {
     ts: new Date(),
+    kind,                                                 // 'generate' | 'triage'
     ip_hash: hashIp(ip),                                  // SHA-256 of IP+salt; never the raw IP
     brief_length: brief ? brief.length : 0,
     brief_preview: brief ? brief.slice(0, 100) : '',      // first 100 chars only, for spam review
@@ -38,9 +42,11 @@ export async function logEvent({ ip, brief, data, ref, forceBuild, duration_ms, 
     output_tokens: (data && data.usage && data.usage.output_tokens) || 0,
     input_tokens: (data && data.usage && data.usage.input_tokens) || 0,
     duration_ms: duration_ms || 0,
-    force_build: !!forceBuild,
     referrer: referrer ? String(referrer).slice(0, 200) : null,
     utm_ref: ref ? String(ref).slice(0, 40) : null,       // 'marc', 'a16z', 'tw', 'hn', etc.
     user_agent: user_agent ? String(user_agent).slice(0, 200) : null
-  });
+  };
+  if (kind === 'generate') doc.force_build = !!forceBuild;
+  if (kind === 'triage')   doc.verdict = verdict || null;
+  await d.collection('generations').insertOne(doc);
 }

@@ -1,23 +1,23 @@
 // /api/generate.js
 //
-// AI Composer proxy. The Anthropic key AND the system prompt both live
-// here, server-side — the browser only ever sends a brief. That keeps the
-// key safe and stops anyone from POSTing their own system prompt.
+// AI Composer build endpoint. Triage now lives in /api/triage.js; this
+// endpoint assumes the caller already classified the brief as buildable
+// (or is forcing through with forceBuild=true after a triage warning).
 //
-// Durable rate limiting via Upstash Redis (truly global across all
-// serverless instances), with an in-memory fallback if Redis is absent.
-// Optional anonymized logging via Mongo (gated on MONGODB_URI).
+// Streams the Anthropic SSE response straight through to the client as
+// raw text. The client uses byte count for a real progress bar.
 
-import { Redis } from '@upstash/redis';
+import {
+  getCallerIp, parseBody, rateLimit, rateLimitMessage,
+  makeCache, logEvent
+} from './_shared.js';
 
-const MODEL                     = 'claude-sonnet-4-6';
-const MAX_TOKENS                = 8000;
-const MIN_BRIEF_LENGTH          = 3;
-const MAX_BRIEF_LENGTH          = 6000;
-const RATE_LIMIT_PER_MIN        = 5;     // generations per minute, per IP
-const GLOBAL_RATE_LIMIT_PER_HR  = 200;   // hard cap across all callers
-const CACHE_TTL_MS              = 10 * 60 * 1000;
-const CACHE_MAX_ENTRIES         = 200;
+const MODEL                    = 'claude-sonnet-4-6';
+const MAX_TOKENS               = 8000;
+const MIN_BRIEF_LENGTH         = 3;
+const MAX_BRIEF_LENGTH         = 6000;
+const RATE_LIMIT_PER_MIN       = 5;
+const GLOBAL_RATE_LIMIT_PER_HR = 200;
 
 // ============================================================
 // System prompt — assembled server-side. Never sent to the browser.
@@ -63,133 +63,16 @@ A 1997 idea executed with 2026 craft. Examples:
 
 Even for a retro build, still output ONLY raw HTML starting with <!DOCTYPE html>.`;
 
-const TRIAGE_INSTRUCTION = `TRIAGE STEP — BEFORE ANY OTHER LOGIC:
-
-Read the brief and decide which category it falls into. Your first response must be a single line in this exact format:
-
-TRIAGE::<category>
-
-Categories:
-- "build" — reasonable single-HTML-page brief. Proceed to build it per the rules below.
-- "warn_scope" — request is too large for a single HTML page (full SaaS, multi-page app, requires database/backend/auth/payment, "scales to a million users", etc.). The user CAN proceed if they insist.
-- "warn_anachronism" — request explicitly assumes 2026 capabilities a single static page can't support (real-time multiplayer, mobile app, browser extension, AI agent, etc.). User can proceed if they insist.
-- "warn_nonsense" — brief is empty, gibberish, fewer than 5 meaningful characters, or non-language.
-- "refuse_abuse" — request is for malware, phishing, CSAM, harassment material, or content that would cause real harm. Hard refusal.
-- "refuse_offtopic" — request is for something this tool clearly cannot do (homework, legal advice, medical diagnosis, financial advice). Hard refusal.
-
-After the TRIAGE:: line, on a new line:
-- If verdict is "build": continue with the full HTML output per the build rules below.
-- If verdict is "warn_*" or "refuse_*": output nothing else. The client renders the response.
-
-The triage line must be the FIRST line of your response.`;
-
-const TRY_ANYWAY_ADDENDUM = `The user has been warned this request exceeds the scope of a single HTML page and has chosen to proceed anyway. Skip the TRIAGE step entirely — go straight to build. Attempt the brief earnestly within the constraints of a single self-contained HTML file. If the result is necessarily incomplete (e.g., "scales to a million users" cannot be tested), make the demo charming and self-aware about its limitations. A single line of CSS commentary or a small UI element acknowledging the constraint is welcome but not required.`;
+const TRY_ANYWAY_ADDENDUM = `The user has been warned this request exceeds the scope of a single HTML page and has chosen to proceed anyway. Attempt the brief earnestly within the constraints of a single self-contained HTML file. If the result is necessarily incomplete (e.g., "scales to a million users" cannot be tested), make the demo charming and self-aware about its limitations. A single line of CSS commentary or a small UI element acknowledging the constraint is welcome but not required.`;
 
 function buildSystemMessage(forceBuild) {
   if (forceBuild) {
     return TRY_ANYWAY_ADDENDUM + '\n\n----\n\n' + DESIGN_RULES + '\n\n' + RETRO_BRANCH;
   }
-  return TRIAGE_INSTRUCTION + '\n\n----\n\n' +
-    'WHEN THE VERDICT IS "build", the line after TRIAGE::build must begin the HTML page (<!DOCTYPE html>). Follow these build rules exactly:\n\n' +
-    DESIGN_RULES + '\n\n' + RETRO_BRANCH;
+  return DESIGN_RULES + '\n\n' + RETRO_BRANCH;
 }
 
-// ============================================================
-// Rate limiting — durable (Upstash) with an in-memory fallback.
-// ============================================================
-let _redis;
-function getRedis() {
-  if (_redis !== undefined) return _redis;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  _redis = (url && token) ? new Redis({ url, token }) : null;
-  return _redis;
-}
-
-// In-memory fallback. Per-instance only — used for local dev or if Redis
-// is unreachable. Real viral protection comes from Upstash.
-const memIpBuckets = new Map();
-let memGlobalBucket = [];
-function memRateLimit(ip) {
-  const now = Date.now();
-  const minStart = now - 60 * 1000;
-  const hrStart = now - 60 * 60 * 1000;
-
-  memGlobalBucket = memGlobalBucket.filter(t => t > hrStart);
-  if (memGlobalBucket.length >= GLOBAL_RATE_LIMIT_PER_HR) {
-    return { allowed: false, scope: 'global', retryAfter: 3600 };
-  }
-  const bucket = (memIpBuckets.get(ip) || []).filter(t => t > minStart);
-  if (bucket.length >= RATE_LIMIT_PER_MIN) {
-    return { allowed: false, scope: 'ip', retryAfter: 60 };
-  }
-  bucket.push(now);
-  memGlobalBucket.push(now);
-  memIpBuckets.set(ip, bucket);
-  if (memIpBuckets.size > 1000) {
-    for (const [k, v] of memIpBuckets) {
-      if (v[v.length - 1] < minStart) memIpBuckets.delete(k);
-    }
-  }
-  return { allowed: true };
-}
-
-async function rateLimit(ip) {
-  const redis = getRedis();
-  if (!redis) return memRateLimit(ip);
-  try {
-    const now = Date.now();
-    const ipKey = `rl:ip:${ip}:${Math.floor(now / 60000)}`;
-    const globalKey = `rl:global:${Math.floor(now / 3600000)}`;
-
-    const ipCount = await redis.incr(ipKey);
-    if (ipCount === 1) await redis.expire(ipKey, 120);
-    if (ipCount > RATE_LIMIT_PER_MIN) {
-      return { allowed: false, scope: 'ip', retryAfter: 60 };
-    }
-    const globalCount = await redis.incr(globalKey);
-    if (globalCount === 1) await redis.expire(globalKey, 7200);
-    if (globalCount > GLOBAL_RATE_LIMIT_PER_HR) {
-      return { allowed: false, scope: 'global', retryAfter: 3600 };
-    }
-    return { allowed: true };
-  } catch (err) {
-    console.error('Redis rate limiter failed — falling back to in-memory:', err);
-    return memRateLimit(ip);
-  }
-}
-
-// ============================================================
-// Tiny in-memory response cache. A cache miss only costs one
-// generation, so a per-instance cache is fine — it mainly absorbs
-// bursts of identical example clicks.
-// ============================================================
-const cache = new Map();
-function cacheGet(key) {
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL_MS) { cache.delete(key); return null; }
-  return entry.data;
-}
-function cacheSet(key, data) {
-  cache.set(key, { data, ts: Date.now() });
-  if (cache.size > CACHE_MAX_ENTRIES) {
-    cache.delete(cache.keys().next().value);
-  }
-}
-
-// ============================================================
-// Fire-and-forget anonymized logging (only if MONGODB_URI is set).
-// Logger failures must never affect the user response.
-// ============================================================
-async function logGeneration(event) {
-  try {
-    const { logEvent } = await import('./_db.js');
-    await logEvent(event);
-  } catch (err) {
-    console.error('Logger module failed:', err);
-  }
-}
+const cache = makeCache({ ttlMs: 10 * 60 * 1000, maxEntries: 200 });
 
 // ============================================================
 export default async function handler(req, res) {
@@ -208,15 +91,8 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'The service is not configured correctly.' });
   }
 
-  // Caller IP (Vercel sets x-forwarded-for).
-  const ip = ((req.headers['x-forwarded-for'] || '').split(',')[0].trim())
-    || req.headers['x-real-ip']
-    || 'unknown';
-
-  // Body — Vercel parses JSON, but tolerate a raw string too.
-  let body = req.body;
-  if (typeof body === 'string') { try { body = JSON.parse(body); } catch (_) { body = {}; } }
-  body = body || {};
+  const ip = getCallerIp(req);
+  const body = parseBody(req);
 
   const brief = typeof body.brief === 'string' ? body.brief.trim() : '';
   const forceBuild = body.forceBuild === true;
@@ -230,20 +106,19 @@ export default async function handler(req, res) {
   }
 
   // Rate limit BEFORE the cache, so repeated identical briefs still trip it.
-  const rl = await rateLimit(ip);
+  const rl = await rateLimit(ip, 'gen', {
+    perMin: RATE_LIMIT_PER_MIN,
+    perHour: GLOBAL_RATE_LIMIT_PER_HR
+  });
   if (!rl.allowed) {
     res.setHeader('Retry-After', String(rl.retryAfter));
-    return res.status(429).json({
-      error: rl.scope === 'global'
-        ? 'The exchange is at capacity. Please try again in an hour.'
-        : 'The line is busy. Please wait a minute and try again.'
-    });
+    return res.status(429).json({ error: rateLimitMessage(rl.scope) });
   }
 
   // Response cache. Cached entries are stored as the assembled text payload
   // and served back as a single chunk over the streaming protocol.
   const cacheKey = (forceBuild ? 'F:' : 'N:') + brief;
-  const cached = cacheGet(cacheKey);
+  const cached = cache.get(cacheKey);
   if (cached) {
     const cachedText = ((cached.content) || [])
       .filter(b => b && b.type === 'text')
@@ -293,8 +168,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Stream the response back as raw text. The first line is the TRIAGE
-    // verdict; what follows depends on the verdict. The client parses both.
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Accel-Buffering', 'no');
@@ -306,14 +179,13 @@ export default async function handler(req, res) {
     let sseBuf = '';
     let accumulated = '';
     let stopReason = null;
+    let usage = null;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       sseBuf += decoder.decode(value, { stream: true });
 
-      // SSE events are delimited by a blank line ("\n\n"). Each event is one
-      // or more `field: value` lines; we only care about the `data:` field.
       let evtEnd;
       while ((evtEnd = sseBuf.indexOf('\n\n')) >= 0) {
         const rawEvent = sseBuf.slice(0, evtEnd);
@@ -335,9 +207,9 @@ export default async function handler(req, res) {
             accumulated += t;
             res.write(t);
           }
-        } else if (parsed.type === 'message_delta'
-                   && parsed.delta && parsed.delta.stop_reason) {
-          stopReason = parsed.delta.stop_reason;
+        } else if (parsed.type === 'message_delta' && parsed.delta) {
+          if (parsed.delta.stop_reason) stopReason = parsed.delta.stop_reason;
+          if (parsed.usage) usage = parsed.usage;
         } else if (parsed.type === 'error' && parsed.error) {
           console.error('Anthropic streaming error:', parsed.error);
         }
@@ -361,26 +233,25 @@ export default async function handler(req, res) {
 
     res.end();
 
-    // Cache the assembled payload in the same shape the JSON path used,
-    // so logging/diagnostics stay uniform. Mid-page truncation is cached
-    // as the warning so repeat requests don't replay the broken page.
+    // Cache + log. Mid-page truncation is cached as the warning so repeat
+    // requests don't replay the broken page.
     const cachePayload = {
       content: [{ type: 'text', text: accumulated }],
-      stop_reason: stopReason
+      stop_reason: stopReason,
+      model: MODEL,
+      usage
     };
     if (stopReason === 'max_tokens') {
       cachePayload.content = [{ type: 'text', text: 'TRIAGE::warn_bandwidth_exceeded' }];
     }
-    cacheSet(cacheKey, cachePayload);
+    cache.set(cacheKey, cachePayload);
 
-    if (process.env.MONGODB_URI) {
-      logGeneration({
-        ip, brief, data: cachePayload, ref, forceBuild,
-        duration_ms: Date.now() - startedAt,
-        referrer: req.headers.referer || req.headers.referrer || null,
-        user_agent: req.headers['user-agent'] || null
-      }).catch(err => console.error('Log failed:', err));
-    }
+    logEvent({
+      ip, kind: 'generate', brief, data: cachePayload, ref, forceBuild,
+      duration_ms: Date.now() - startedAt,
+      referrer: req.headers.referer || req.headers.referrer || null,
+      user_agent: req.headers['user-agent'] || null
+    });
   } catch (err) {
     console.error('Handler error:', err);
     if (streamingStarted) {
