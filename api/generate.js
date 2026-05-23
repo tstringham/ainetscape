@@ -255,7 +255,10 @@ export default async function handler(req, res) {
       duration_ms: Date.now() - startedAt,
       referrer: req.headers.referer || req.headers.referrer || null,
       user_agent: req.headers['user-agent'] || null,
-      verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null
+      verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null,
+      // Archive whatever the model emitted — full HTML on success, REFUSED
+      // line on refusal, partial body if the client disconnected mid-stream.
+      body_html: accumulated || null
     });
   } catch (err) {
     console.error('Handler error:', err);

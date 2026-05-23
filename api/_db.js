@@ -29,7 +29,7 @@ function hashIp(ip) {
 
 export async function logEvent({
   ip, event, kind, brief, data, ref, forceBuild, duration_ms,
-  referrer, user_agent, verdict
+  referrer, user_agent, verdict, body_html
 }) {
   const d = await getDb();
   const doc = {
@@ -42,7 +42,8 @@ export async function logEvent({
     kind: kind || 'generate',
     ip_hash: hashIp(ip),                                  // SHA-256 of IP+salt; never the raw IP
     brief_length: brief ? brief.length : 0,
-    brief_preview: brief ? brief.slice(0, 100) : '',      // first 100 chars only, for spam review
+    brief_preview: brief ? brief.slice(0, 100) : '',      // legacy quick-scan field
+    brief_full: brief ? String(brief) : null,             // full brief text (up to MAX_BRIEF_LENGTH)
     model: (data && data.model) || null,
     output_tokens: (data && data.usage && data.usage.output_tokens) || 0,
     input_tokens: (data && data.usage && data.usage.input_tokens) || 0,
@@ -53,5 +54,11 @@ export async function logEvent({
   };
   if (forceBuild !== undefined) doc.force_build = !!forceBuild;
   if (verdict) doc.verdict = String(verdict).slice(0, 200);
+  if (body_html) {
+    // Archive the generated page (or REFUSED line, or partial body). Lets us
+    // browse the gallery of what people are creating and review for abuse.
+    doc.body_html = String(body_html);
+    doc.body_size_bytes = doc.body_html.length;
+  }
   await d.collection('generations').insertOne(doc);
 }
