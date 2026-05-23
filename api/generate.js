@@ -153,9 +153,15 @@ export default async function handler(req, res) {
     });
 
     if (!upstream.ok) {
+      // TODO(diag): verbose body logging to catch the xAI swap issue.
+      // Remove this branch once the bug is identified.
+      const rawBody = await upstream.text().catch(() => '');
+      console.error('[DIAG] xAI non-ok response',
+        upstream.status,
+        Array.from(upstream.headers.entries()),
+        rawBody.slice(0, 500));
       let errBody = null;
-      try { errBody = await upstream.json(); } catch (_) {}
-      console.error('xAI API error:', upstream.status, errBody && (errBody.error || errBody));
+      try { errBody = JSON.parse(rawBody); } catch (_) {}
       logEvent({
         ip, event: 'ai_generation_failed', brief, ref,
         duration_ms: Date.now() - startedAt,
