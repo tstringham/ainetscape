@@ -402,21 +402,50 @@
     border-right: 1px solid var(--hi);
   }
 
-  /* THE button. The anachronism. */
+  /* THE button. The anachronism. The most visually demanding element in
+     the toolbar — it should pull the eye within 2s of page load. */
   .tbtn.ai-btn {
-    background: linear-gradient(180deg, #ff00ff 0%, #00ffff 100%);
+    background:
+      linear-gradient(180deg,
+        #ff44ff 0%,
+        #ff00cc 32%,
+        #cc00ff 50%,
+        #00ccff 68%,
+        #22ffff 100%);
     color: black;
     border: 2px solid;
     border-color: #ffff00 #ff00ff #ff00ff #ffff00;
-    animation: aiglow 1.6s ease-in-out infinite alternate;
+    transform-origin: center;
+    animation: ai-breathe 2.4s ease-in-out infinite;
+    position: relative;
   }
-  .tbtn.ai-btn .lbl { font-weight: bold; text-shadow: 1px 1px 0 #fff; }
+  .tbtn.ai-btn .lbl {
+    font-weight: bold;
+    letter-spacing: 0.02em;
+    text-shadow: 1px 1px 0 #fff, 0 0 6px rgba(255, 255, 255, 0.55);
+  }
   .tbtn.ai-btn:hover {
     border-color: #ffff00 #00ffff #00ffff #ffff00;
+    animation-play-state: paused;
   }
-  @keyframes aiglow {
-    from { box-shadow: 0 0 0 0 rgba(255, 0, 255, 0.6); }
-    to   { box-shadow: 0 0 6px 2px rgba(0, 255, 255, 0.9); }
+  /* Breathe: gentle scale (1.0 → 1.04 → 1.0) layered with a glow swell.
+     2.4s cycle reads as "alive" without feeling agitated. */
+  @keyframes ai-breathe {
+    0% {
+      transform: scale(1.00);
+      box-shadow: 0 0 2px 0 rgba(255, 0, 255, 0.30),
+                  0 0 5px 1px rgba(0, 255, 255, 0.45);
+    }
+    50% {
+      transform: scale(1.04);
+      box-shadow: 0 0 10px 3px rgba(255, 0, 255, 0.55),
+                  0 0 16px 5px rgba(0, 255, 255, 0.75);
+    }
+    100% {
+      transform: scale(1.00);
+      box-shadow: 0 0 2px 0 rgba(255, 0, 255, 0.30),
+                  0 0 5px 1px rgba(0, 255, 255, 0.45);
+    }
   }
 
   /* ---- Formatting toolbar (second row) ---- */
@@ -750,7 +779,12 @@
 
   /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
-    .tbtn.ai-btn { animation: none; box-shadow: 0 0 6px 2px rgba(0, 255, 255, 0.8); }
+    .tbtn.ai-btn {
+      animation: none;
+      transform: none;
+      box-shadow: 0 0 10px 3px rgba(0, 255, 255, 0.85),
+                  0 0 4px 1px rgba(255, 0, 255, 0.5);
+    }
     #editor blink { animation: none; }
     .ai-progress-bar { transition: none; }
   }
@@ -987,7 +1021,7 @@
             <font color="#008000"><i>World Wide Web</i></font>.
           </font>
         </p>
-        <p><font size="3">This page is best viewed with a strong sense of <b>nostalgia</b> and a dash of <b>time travel</b>.</font></p>
+        <p><font size="3">This HTML page has a strong sense of <b>nostalgia</b> with a dash of <b>time travel</b>. Feel free to edit it, or let our AI Composer&trade; make another dev job redundant&mdash;even in 1997.</font></p>
         <h2><font color="#800080">My Interests</font></h2>
         <ul>
           <li><font size="3">Deep Thought 7.5</font></li>
@@ -1784,35 +1818,35 @@ upgradeBtn.addEventListener('click', () => {
 const WARNINGS = {
   warn_scope: [
     { heading: "Bandwidth Notice",
-      body: "At 28.8 kbps, that request would take approximately 14 years to download. We've calculated this on our IBM PC clone. Are you sure?" },
-    { heading: "Whoa There, Partner",
-      body: "That brief calls for infrastructure we don't have. Our server is a Pentium 90 under a desk. Maybe try something smaller?" },
-    { heading: "Server Room Status: Sweating",
-      body: "Building that would melt the T1 line we share with the dental office. They need it for X-ray emails." },
+      body: "At 28.8 kbps, the requested project would take approximately 14 years to download. The estimate was calculated on our IBM PC clone. The system recommends reducing scope before resubmission." },
+    { heading: "Capacity Determination",
+      body: "Resource allocation has reviewed your brief. The required infrastructure exceeds the capabilities of our shared Pentium 90, which is currently under a desk. A smaller project is recommended." },
+    { heading: "T1 Line Saturation",
+      body: "Constructing that page would saturate the T1 line we share with the dental office next door. They require it for X-ray emails. Please submit a brief of reduced bandwidth." },
     { heading: "Project Scope Exceeded",
-      body: "I asked the modem. It made a noise I've never heard before. Let's reduce the scope or proceed at your own risk." },
+      body: "The Project Manager has reviewed your brief and notes that the scope exceeds quarterly capacity. You may reduce the scope, or proceed at your own risk." },
     { heading: "ETA: Sometime in 2039",
-      body: "We could build that, but our project manager (a Tamagotchi named Steve) says we'd miss launch by approximately 13 years." }
+      body: "We are pleased to inform you the project is technically achievable. Our project manager — a Tamagotchi named Steve — projects a completion date of approximately Q3 2039." }
   ],
   warn_anachronism: [
     { heading: "Time Machine Required",
-      body: "That feature won't be invented for several more years. Would you like to wait, or try something the 90s can actually do?" },
+      body: "The requested feature is not yet available in the current calendar year. You may wait, or submit a brief the 1990s can actually fulfill." },
     { heading: "Anachronism Detected",
-      body: "Real-time multiplayer requires the future. We've sent a fax to MIT asking for an estimated arrival date." },
+      body: "Real-time multiplayer requires the future. A fax has been transmitted to MIT requesting an estimated availability date. We will respond when they respond." },
     { heading: "Not Yet Invented",
-      body: "Mobile apps are not a thing here. Our most portable device is a Palm Pilot, and even that is suspicious." },
+      body: "Mobile applications are not currently in service. Our most portable device is a Palm Pilot, which the office is reasonably suspicious of." },
     { heading: "We Don't Have That Yet",
-      body: "Our IT department says that technology arrives sometime after Y2K (assuming Y2K is survivable). Try a smaller scope?" },
+      body: "Information Technology has confirmed that the requested technology arrives sometime after Y2K, contingent on Y2K being survivable. Please submit a smaller project in the interim." },
     { heading: "From The Future Department",
-      body: "AI agents, blockchain, the metaverse — we appreciate the vision but the modem can't quite reach that far yet." }
+      body: "AI agents, blockchain, and the metaverse are not currently supported in this calendar year. The Future Department has logged your interest in its filing cabinet." }
   ],
   warn_nonsense: [
-    { heading: "Brief Unclear",
-      body: "We received your transmission but the line was noisy. Could you try again, this time with more detail?" },
-    { heading: "Garbled Signal",
-      body: "It looks like your connection dropped mid-thought. Want to try a clearer brief?" },
-    { heading: "Insufficient Data",
-      body: "Our parser is confused. It usually only gets confused on Tuesdays. Mind being more specific?" }
+    { heading: "Transmission Garbled",
+      body: "Line noise has rendered approximately 87% of your transmission illegible. Our records indicate that complete-sentence briefs are processed 340% faster than fragments." },
+    { heading: "Parser Service Notice",
+      body: "Our parser was unable to identify the project type. Please resubmit the request as a complete sentence describing the website you wish to publish." },
+    { heading: "Incomplete Work Order",
+      body: "Quality Assurance has flagged this submission as incomplete. Briefs below 5 meaningful characters are returned unprocessed per company policy." }
   ],
   warn_bandwidth_exceeded: [
     { heading: "Connection Dropped at 97.4%",
@@ -1828,11 +1862,11 @@ const WARNINGS = {
   ],
   refuse_abuse: [
     { heading: "Request Declined",
-      body: "We're an HTML composer, not a hacker tool. That request isn't one we'll build. Please try a different brief." }
+      body: "Compliance has determined that the submitted brief falls outside the scope of permitted output. The request will not be queued for production. Thank you for your continued interest in AI Netscape." }
   ],
   refuse_offtopic: [
-    { heading: "Not Our Department",
-      body: "This site builds websites — not homework, legal opinions, medical advice, or financial guidance. Please try a website brief instead." }
+    { heading: "Outside Department Scope",
+      body: "AI Netscape constructs websites. Homework, legal opinions, medical diagnoses, and financial advice are handled by separate departments that no longer exist. Please submit a website brief." }
   ]
 };
 
@@ -1927,7 +1961,7 @@ const LOADING_STAGES = [
   { at: 4.0,  text: 'Authenticating session...' },
   { at: 5.5,  text: 'Sending compose request...' },
   { at: 7.0,  text: 'Allocating server resources...' },
-  { at: 9.0,  text: 'Asking the AI very politely...' },
+  { at: 9.0,  text: 'Issuing instructions to the engine...' },
   { at: 11.0, text: 'Considering color palettes...' },
   { at: 13.0, text: 'Rejecting Helvetica...' },
   { at: 15.0, text: 'Reading reference manuals...' },
@@ -1937,7 +1971,7 @@ const LOADING_STAGES = [
   { at: 25.0, text: 'Almost there...' },
   { at: 28.0, text: 'Just a few more bits...' },
   { at: 32.0, text: 'The line is slow today...' },
-  { at: 40.0, text: 'Still receiving... (this is a big one)' }
+  { at: 40.0, text: 'Still receiving. Capacity remains within tolerances.' }
 ];
 
 // Progress baseline — roughly the output-token count of a typical full
@@ -3010,7 +3044,7 @@ const MENUS = {
     { label: 'Outdent', acc: 'O', action: () => exec('outdent') }
   ],
   Tools: [
-    { label: 'Check Spelling...', acc: 'S', action: () => showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)') },
+    { label: 'Check Spelling...', acc: 'S', action: () => showAlert('Spelling', 'Spell check complete. No errors found.\n\nYour document has been certified spell-correct by the AI Netscape Quality Assurance team.') },
     { label: 'AI Composer...',     acc: 'A', action: () => { openDialog('dlg-ai'); const p = document.getElementById('ai-prompt'); if (p) p.focus(); } },
     { type: 'separator' },
     { label: 'Word Count',         acc: 'W', action: () => showWordCount() },
