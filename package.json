@@ -9,8 +9,9 @@
     "build:favicons": "python3 scripts/build_favicons.py",
     "build:og": "node scripts/build_og.mjs",
     "build:lastupdated": "node scripts/build_lastupdated.mjs",
+    "build:ga": "node scripts/build_ga.mjs",
     "build:assets": "npm run build:favicons && npm run build:og",
-    "vercel-build": "npm run build:lastupdated"
+    "vercel-build": "npm run build:lastupdated && npm run build:ga"
   },
   "dependencies": {
     "@upstash/redis": "^1.34.3",

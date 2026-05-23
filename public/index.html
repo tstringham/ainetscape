@@ -34,6 +34,10 @@
      If the file is missing (rare) the static placeholder stays visible. -->
 <script src="/last-updated.js"></script>
 
+<!-- GA4 bootstrap. Generated at build time from GA_MEASUREMENT_ID env
+     var; stubs window.gtag to a no-op if analytics aren't enabled. -->
+<script src="/ga.js" async></script>
+
 <!-- Easter egg for view-source visitors -->
 <!--
      ╔══════════════════════════════════════════════════════════╗
@@ -1803,6 +1807,7 @@ upgradeBtn.addEventListener('click', () => {
   modemUpgraded = !modemUpgraded;
   lsSet('modem-upgraded', modemUpgraded ? '1' : '0');
   applyUpgradeUI();
+  trackEvent('modem_upgrade_toggled', { upgraded: !!modemUpgraded });
   try {
     modem.ensureContext();
     if (modem.ctx.state === 'suspended') modem.ctx.resume();
@@ -1969,6 +1974,15 @@ function beaconEvent(event, brief) {
   } catch (_) {}
 }
 
+// ---- Client-side GA4 event helper ----
+// Safe to call even when GA is disabled (ga.js stubs window.gtag to a
+// no-op) and before /ga.js finishes loading async (typeof check).
+function trackEvent(name, params) {
+  if (typeof window.gtag === 'function') {
+    try { window.gtag('event', name, params || {}); } catch (_) {}
+  }
+}
+
 // ---- The generation flow ----
 // Every brief goes directly to /api/generate (no pre-classifier). The
 // stream returns either raw HTML (build) or a single `REFUSED::reason`
@@ -1996,6 +2010,7 @@ async function generateWithAI(opts) {
   aiInFlight = true;
   abortReason = null;
   generationStartedAt = Date.now();
+  trackEvent('ai_compose_submitted', { brief_length: userBrief.length, ref: getRef() || '' });
   renderLoadingState();
   startLoadingChoreography();
   playModemSequence();
@@ -2071,6 +2086,7 @@ async function generateWithAI(opts) {
     clearTimers();
 
     if (refusedDetected) {
+      trackEvent('ai_compose_refused', { duration_ms: Date.now() - generationStartedAt });
       stopGenerationFx(false);
       showRefusalDialog();
       return;
@@ -2081,6 +2097,10 @@ async function generateWithAI(opts) {
 
     snapProgressToComplete();
     stopGenerationFx(true);
+    trackEvent('ai_compose_completed', {
+      duration_ms: Date.now() - generationStartedAt,
+      body_size: text.length
+    });
     renderBuild(text, userBrief);
 
   } catch (err) {
@@ -2088,15 +2108,21 @@ async function generateWithAI(opts) {
     if (err && err.name === 'AbortError') {
       if (abortReason === 'cancel') {
         beaconEvent('ai_cancelled', userBrief);
+        trackEvent('ai_compose_cancelled', { duration_ms: Date.now() - generationStartedAt });
         return;   // cancelGeneration() already cleaned up the UI
       }
       if (abortReason === 'timeout') {
         beaconEvent('ai_timeout', userBrief);
+        trackEvent('ai_compose_timeout', { duration_ms: Date.now() - generationStartedAt });
         stopGenerationFx(false);
         showTimeoutDialog(userBrief);
         return;
       }
     }
+    trackEvent('ai_compose_failed', {
+      duration_ms: Date.now() - generationStartedAt,
+      message: (err && err.message ? String(err.message).slice(0, 100) : 'unknown')
+    });
     stopGenerationFx(false);
     handleAIError(err, userBrief);
   } finally {
