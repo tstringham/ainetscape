@@ -16,8 +16,13 @@ const MODEL                    = 'claude-sonnet-4-6';
 const MAX_TOKENS               = 8000;
 const MIN_BRIEF_LENGTH         = 3;
 const MAX_BRIEF_LENGTH         = 6000;
+// Cost-binding rate limits. Per-IP per-hour and per-IP per-day are tight
+// enough that a single IP can't sustainably accumulate cost even by pacing
+// under the per-minute burst limit.
 const RATE_LIMIT_PER_MIN       = 5;
 const GLOBAL_RATE_LIMIT_PER_HR = 200;
+const IP_LIMIT_PER_HOUR        = 20;
+const IP_LIMIT_PER_DAY         = 40;
 
 // ============================================================
 // System prompt — assembled server-side. Never sent to the browser.
@@ -107,8 +112,10 @@ export default async function handler(req, res) {
 
   // Rate limit BEFORE the cache, so repeated identical briefs still trip it.
   const rl = await rateLimit(ip, 'gen', {
-    perMin: RATE_LIMIT_PER_MIN,
-    perHour: GLOBAL_RATE_LIMIT_PER_HR
+    perMin:    RATE_LIMIT_PER_MIN,
+    perHour:   GLOBAL_RATE_LIMIT_PER_HR,
+    ipPerHour: IP_LIMIT_PER_HOUR,
+    ipPerDay:  IP_LIMIT_PER_DAY
   });
   if (!rl.allowed) {
     res.setHeader('Retry-After', String(rl.retryAfter));

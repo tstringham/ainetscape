@@ -36,68 +36,108 @@ function getRedis() {
   return _redis;
 }
 
-// In-memory fallback. Per-instance only. Keyed by `${kind}:${ip}`.
+// In-memory fallback. Per-instance only. Per-IP buckets are keyed by
+// `${kind}:${window}:${ip}` so the same IP can be tracked across the
+// minute/hour/day windows independently.
 const memIpBuckets = new Map();
 const memGlobalBuckets = new Map();
 
-function memRateLimit(ip, kind, perMin, perHour) {
+function memRateLimit(ip, kind, opts) {
   const now = Date.now();
   const minStart = now - 60 * 1000;
-  const hrStart = now - 60 * 60 * 1000;
+  const hrStart  = now - 60 * 60 * 1000;
+  const dayStart = now - 24 * 60 * 60 * 1000;
 
-  const globalKey = kind;
-  const gBucket = (memGlobalBuckets.get(globalKey) || []).filter(t => t > hrStart);
-  if (gBucket.length >= perHour) {
-    memGlobalBuckets.set(globalKey, gBucket);
+  // Global hourly cap.
+  const gBucket = (memGlobalBuckets.get(kind) || []).filter(t => t > hrStart);
+  if (gBucket.length >= opts.perHour) {
+    memGlobalBuckets.set(kind, gBucket);
     return { allowed: false, scope: 'global', retryAfter: 3600 };
   }
-  const ipKey = `${kind}:${ip}`;
-  const bucket = (memIpBuckets.get(ipKey) || []).filter(t => t > minStart);
-  if (bucket.length >= perMin) {
+
+  // Per-IP windows. Each is its own keyed array because the windows differ.
+  const ipMinKey  = `${kind}:min:${ip}`;
+  const ipHrKey   = `${kind}:hr:${ip}`;
+  const ipDayKey  = `${kind}:day:${ip}`;
+  const minBucket = (memIpBuckets.get(ipMinKey) || []).filter(t => t > minStart);
+  const hrBucket  = (memIpBuckets.get(ipHrKey)  || []).filter(t => t > hrStart);
+  const dayBucket = (memIpBuckets.get(ipDayKey) || []).filter(t => t > dayStart);
+
+  if (minBucket.length >= opts.perMin) {
     return { allowed: false, scope: 'ip', retryAfter: 60 };
   }
-  bucket.push(now);
-  gBucket.push(now);
-  memIpBuckets.set(ipKey, bucket);
-  memGlobalBuckets.set(globalKey, gBucket);
-  if (memIpBuckets.size > 2000) {
+  if (hrBucket.length >= opts.ipPerHour) {
+    return { allowed: false, scope: 'ip-hour', retryAfter: 3600 };
+  }
+  if (dayBucket.length >= opts.ipPerDay) {
+    return { allowed: false, scope: 'ip-day', retryAfter: 24 * 3600 };
+  }
+
+  minBucket.push(now); hrBucket.push(now); dayBucket.push(now); gBucket.push(now);
+  memIpBuckets.set(ipMinKey, minBucket);
+  memIpBuckets.set(ipHrKey, hrBucket);
+  memIpBuckets.set(ipDayKey, dayBucket);
+  memGlobalBuckets.set(kind, gBucket);
+
+  // Cheap LRU sweep on the per-IP map so a long-running instance doesn't
+  // accumulate keys for dead IPs forever.
+  if (memIpBuckets.size > 4000) {
     for (const [k, v] of memIpBuckets) {
-      if (v[v.length - 1] < minStart) memIpBuckets.delete(k);
+      if (v[v.length - 1] < dayStart) memIpBuckets.delete(k);
     }
   }
   return { allowed: true };
 }
 
-export async function rateLimit(ip, kind = 'gen', { perMin = 5, perHour = 200 } = {}) {
+export async function rateLimit(ip, kind = 'gen', {
+  perMin     = 5,    // per-IP, per-minute (burst limit)
+  perHour    = 200,  // global, per-hour (hard ceiling across all callers)
+  ipPerHour  = 20,   // per-IP, per-hour (sustained pacing cap)
+  ipPerDay   = 40    // per-IP, per-day (total-volume cap, defeats IP-rotation pacing)
+} = {}) {
+  const opts = { perMin, perHour, ipPerHour, ipPerDay };
   const redis = getRedis();
-  if (!redis) return memRateLimit(ip, kind, perMin, perHour);
+  if (!redis) return memRateLimit(ip, kind, opts);
   try {
     const now = Date.now();
-    const ipKey = `rl:${kind}:ip:${ip}:${Math.floor(now / 60000)}`;
+    const ipMinKey  = `rl:${kind}:ip:min:${ip}:${Math.floor(now / 60000)}`;
+    const ipHrKey   = `rl:${kind}:ip:hr:${ip}:${Math.floor(now / 3600000)}`;
+    const ipDayKey  = `rl:${kind}:ip:day:${ip}:${Math.floor(now / 86400000)}`;
     const globalKey = `rl:${kind}:global:${Math.floor(now / 3600000)}`;
 
-    const ipCount = await redis.incr(ipKey);
-    if (ipCount === 1) await redis.expire(ipKey, 120);
-    if (ipCount > perMin) {
-      return { allowed: false, scope: 'ip', retryAfter: 60 };
-    }
+    const ipMin = await redis.incr(ipMinKey);
+    if (ipMin === 1) await redis.expire(ipMinKey, 120);
+    if (ipMin > perMin) return { allowed: false, scope: 'ip', retryAfter: 60 };
+
+    const ipHr = await redis.incr(ipHrKey);
+    if (ipHr === 1) await redis.expire(ipHrKey, 7200);
+    if (ipHr > ipPerHour) return { allowed: false, scope: 'ip-hour', retryAfter: 3600 };
+
+    const ipDay = await redis.incr(ipDayKey);
+    if (ipDay === 1) await redis.expire(ipDayKey, 86400 * 2);
+    if (ipDay > ipPerDay) return { allowed: false, scope: 'ip-day', retryAfter: 24 * 3600 };
+
     const globalCount = await redis.incr(globalKey);
     if (globalCount === 1) await redis.expire(globalKey, 7200);
-    if (globalCount > perHour) {
-      return { allowed: false, scope: 'global', retryAfter: 3600 };
-    }
+    if (globalCount > perHour) return { allowed: false, scope: 'global', retryAfter: 3600 };
+
     return { allowed: true };
   } catch (err) {
     console.error(`Redis rate limiter failed (${kind}) — falling back to in-memory:`, err);
-    return memRateLimit(ip, kind, perMin, perHour);
+    return memRateLimit(ip, kind, opts);
   }
 }
 
-// Friendly 429 messages for the two scope kinds.
+// Friendly 429 messages by scope. The copy stays in character — every line
+// could plausibly come from a 1997 ISP help desk.
 export function rateLimitMessage(scope) {
-  return scope === 'global'
-    ? 'The exchange is at capacity. Please try again in an hour.'
-    : 'The line is busy. Please wait a minute and try again.';
+  switch (scope) {
+    case 'global':  return 'The exchange is at capacity. Please try again in an hour.';
+    case 'ip-hour': return 'You have made many requests this hour. Please rest the line for a bit and try again later.';
+    case 'ip-day':  return 'You have reached your daily allotment of compose requests. Please try again tomorrow.';
+    case 'ip':
+    default:        return 'The line is busy. Please wait a minute and try again.';
+  }
 }
 
 // ============================================================

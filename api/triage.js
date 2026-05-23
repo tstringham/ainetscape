@@ -18,8 +18,12 @@ const MODEL                  = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS             = 32;     // one TRIAGE::word line is ~6 tokens
 const MIN_BRIEF_LENGTH       = 3;
 const MAX_BRIEF_LENGTH       = 6000;
-const RATE_LIMIT_PER_MIN     = 5;
+// Triage is the cheap pre-flight (Haiku, ~6 output tokens). Per-IP caps are
+// 2x the generate limits so triage is never the bottleneck for honest users.
+const RATE_LIMIT_PER_MIN       = 5;
 const GLOBAL_RATE_LIMIT_PER_HR = 200;
+const IP_LIMIT_PER_HOUR        = 40;
+const IP_LIMIT_PER_DAY         = 80;
 
 const SYSTEM_PROMPT = `You are a triage classifier for AI Netscape, a parody site that generates single HTML pages.
 
@@ -71,8 +75,10 @@ export default async function handler(req, res) {
   }
 
   const rl = await rateLimit(ip, 'tri', {
-    perMin: RATE_LIMIT_PER_MIN,
-    perHour: GLOBAL_RATE_LIMIT_PER_HR
+    perMin:    RATE_LIMIT_PER_MIN,
+    perHour:   GLOBAL_RATE_LIMIT_PER_HR,
+    ipPerHour: IP_LIMIT_PER_HOUR,
+    ipPerDay:  IP_LIMIT_PER_DAY
   });
   if (!rl.allowed) {
     res.setHeader('Retry-After', String(rl.retryAfter));
