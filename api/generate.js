@@ -11,7 +11,7 @@
 import { Redis } from '@upstash/redis';
 
 const MODEL                     = 'claude-sonnet-4-6';
-const MAX_TOKENS                = 4500;
+const MAX_TOKENS                = 8000;
 const MIN_BRIEF_LENGTH          = 3;
 const MAX_BRIEF_LENGTH          = 6000;
 const RATE_LIMIT_PER_MIN        = 5;     // generations per minute, per IP
@@ -240,12 +240,26 @@ export default async function handler(req, res) {
     });
   }
 
-  // Response cache.
+  // Response cache. Cached entries are stored as the assembled text payload
+  // and served back as a single chunk over the streaming protocol.
   const cacheKey = (forceBuild ? 'F:' : 'N:') + brief;
   const cached = cacheGet(cacheKey);
-  if (cached) return res.status(200).json(cached);
+  if (cached) {
+    const cachedText = ((cached.content) || [])
+      .filter(b => b && b.type === 'text')
+      .map(b => b.text)
+      .join('');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200);
+    res.write(cachedText);
+    res.end();
+    return;
+  }
 
   const startedAt = Date.now();
+  let streamingStarted = false;
+
   try {
     const upstream = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -257,6 +271,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: MAX_TOKENS,
+        stream: true,
         // Array form + cache_control: the large system prompt is identical
         // across requests, so Anthropic prompt caching cuts repeat cost.
         system: [{
@@ -268,30 +283,110 @@ export default async function handler(req, res) {
       })
     });
 
-    const data = await upstream.json();
-
     if (!upstream.ok) {
-      console.error('Anthropic API error:', upstream.status, data && data.error);
+      let errBody = null;
+      try { errBody = await upstream.json(); } catch (_) {}
+      console.error('Anthropic API error:', upstream.status, errBody && errBody.error);
       const status = upstream.status === 429 ? 429 : 502;
       return res.status(status).json({
-        error: (data && data.error && data.error.message) || 'The generation service returned an error.'
+        error: (errBody && errBody.error && errBody.error.message) || 'The generation service returned an error.'
       });
     }
 
-    cacheSet(cacheKey, data);
+    // Stream the response back as raw text. The first line is the TRIAGE
+    // verdict; what follows depends on the verdict. The client parses both.
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.status(200);
+    streamingStarted = true;
+
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let sseBuf = '';
+    let accumulated = '';
+    let stopReason = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      sseBuf += decoder.decode(value, { stream: true });
+
+      // SSE events are delimited by a blank line ("\n\n"). Each event is one
+      // or more `field: value` lines; we only care about the `data:` field.
+      let evtEnd;
+      while ((evtEnd = sseBuf.indexOf('\n\n')) >= 0) {
+        const rawEvent = sseBuf.slice(0, evtEnd);
+        sseBuf = sseBuf.slice(evtEnd + 2);
+
+        let dataLine = null;
+        for (const line of rawEvent.split('\n')) {
+          if (line.startsWith('data:')) { dataLine = line.slice(5).trim(); break; }
+        }
+        if (!dataLine || dataLine === '[DONE]') continue;
+
+        let parsed;
+        try { parsed = JSON.parse(dataLine); } catch (_) { continue; }
+
+        if (parsed.type === 'content_block_delta'
+            && parsed.delta && parsed.delta.type === 'text_delta') {
+          const t = parsed.delta.text || '';
+          if (t) {
+            accumulated += t;
+            res.write(t);
+          }
+        } else if (parsed.type === 'message_delta'
+                   && parsed.delta && parsed.delta.stop_reason) {
+          stopReason = parsed.delta.stop_reason;
+        } else if (parsed.type === 'error' && parsed.error) {
+          console.error('Anthropic streaming error:', parsed.error);
+        }
+      }
+    }
+
+    // Truncation handling. Two cases:
+    //   1. No text emitted (context filled before any output) — emit the
+    //      bandwidth-exceeded triage line so the client routes to the modal.
+    //   2. Text emitted but truncated mid-page — append a sentinel comment
+    //      the client picks up post-stream to overlay the warning modal.
+    if (stopReason === 'max_tokens') {
+      if (!accumulated.trim()) {
+        const sentinel = 'TRIAGE::warn_bandwidth_exceeded';
+        res.write(sentinel);
+        accumulated = sentinel;
+      } else {
+        res.write('\n<!--TRIAGE_TRAILER:warn_bandwidth_exceeded-->');
+      }
+    }
+
+    res.end();
+
+    // Cache the assembled payload in the same shape the JSON path used,
+    // so logging/diagnostics stay uniform. Mid-page truncation is cached
+    // as the warning so repeat requests don't replay the broken page.
+    const cachePayload = {
+      content: [{ type: 'text', text: accumulated }],
+      stop_reason: stopReason
+    };
+    if (stopReason === 'max_tokens') {
+      cachePayload.content = [{ type: 'text', text: 'TRIAGE::warn_bandwidth_exceeded' }];
+    }
+    cacheSet(cacheKey, cachePayload);
 
     if (process.env.MONGODB_URI) {
       logGeneration({
-        ip, brief, data, ref, forceBuild,
+        ip, brief, data: cachePayload, ref, forceBuild,
         duration_ms: Date.now() - startedAt,
         referrer: req.headers.referer || req.headers.referrer || null,
         user_agent: req.headers['user-agent'] || null
       }).catch(err => console.error('Log failed:', err));
     }
-
-    return res.status(200).json(data);
   } catch (err) {
     console.error('Handler error:', err);
-    return res.status(500).json({ error: 'The generation request could not be completed.' });
+    if (streamingStarted) {
+      try { res.end(); } catch (_) {}
+    } else {
+      return res.status(500).json({ error: 'The generation request could not be completed.' });
+    }
   }
 }

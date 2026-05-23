@@ -1560,6 +1560,18 @@ const WARNINGS = {
     { heading: "Insufficient Data",
       body: "Our parser is confused. It usually only gets confused on Tuesdays. Mind being more specific?" }
   ],
+  warn_bandwidth_exceeded: [
+    { heading: "Connection Dropped at 97.4%",
+      body: "We received most of your idea, but the 28.8k pipeline gave up before the final CSS rules. The 56k upgrade would have made it. Want to try something smaller?" },
+    { heading: "Modem Timeout",
+      body: "Your idea exceeded the bandwidth of our shared T1 line. The dental office next door is using it for X-ray emails. Try a tighter brief?" },
+    { heading: "Packet Loss at 99%",
+      body: "The page was almost done. The last few bytes are floating somewhere in the upstream router. We have called them. No response. Try something smaller?" },
+    { heading: "Hard Drive Full",
+      body: "The output exceeded the 40 MB hard drive on our staging Pentium. We can free up space, but it'll take 4 to 6 days. Want to scope down instead?" },
+    { heading: "Bandwidth Exceeded",
+      body: "Our hosting plan from CompuServe maxes out at one page per visit. Yours required two. Try a more focused brief?" }
+  ],
   refuse_abuse: [
     { heading: "Request Declined",
       body: "We're an HTML composer, not a hacker tool. That request isn't one we'll build. Please try a different brief." }
@@ -1717,7 +1729,21 @@ async function generateWithAI(opts) {
   playModemSequence();
 
   currentAbort = new AbortController();
-  const timeoutId = setTimeout(() => { abortReason = 'timeout'; try { currentAbort.abort(); } catch (_) {} }, 120000);
+
+  // Silence timer: aborts only if the stream goes idle (no chunks for N ms),
+  // not on total elapsed time. Re-armed on each chunk. 30s of silence is
+  // generous for a healthy upstream — if it's been quiet that long, the
+  // line really has dropped.
+  const STREAM_SILENCE_MS = 30000;
+  let silenceTimerId = null;
+  const armSilence = () => {
+    if (silenceTimerId) clearTimeout(silenceTimerId);
+    silenceTimerId = setTimeout(() => {
+      abortReason = 'timeout';
+      try { currentAbort.abort(); } catch (_) {}
+    }, STREAM_SILENCE_MS);
+  };
+  armSilence();
 
   try {
     const resp = await fetch('/api/generate', {
@@ -1726,9 +1752,9 @@ async function generateWithAI(opts) {
       signal: currentAbort.signal,
       body: JSON.stringify({ brief: userBrief, ref: getRef(), forceBuild: !!opts.forceBuild })
     });
-    clearTimeout(timeoutId);
 
     if (!resp.ok) {
+      if (silenceTimerId) clearTimeout(silenceTimerId);
       let serverMsg = '';
       try { const j = await resp.json(); serverMsg = (j && j.error) || ''; } catch (_) {}
       const e = new Error('HTTP ' + resp.status + (serverMsg ? ': ' + serverMsg : ''));
@@ -1736,21 +1762,50 @@ async function generateWithAI(opts) {
       throw e;
     }
 
-    const data = await resp.json();
-    const text = ((data && data.content) || [])
-      .filter(b => b && b.type === 'text')
-      .map(b => b.text)
-      .join('\n')
-      .trim();
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let text = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      armSilence();
+    }
+    if (silenceTimerId) clearTimeout(silenceTimerId);
+    text = text.trim();
 
     if (!text) throw new Error('empty response');
 
+    // Server appends this trailer when the upstream model hit its output cap
+    // mid-page. The streamed HTML is incomplete; surface the bandwidth
+    // warning over the existing comedy instead of rendering a broken page.
+    const TRAILER = '<!--TRIAGE_TRAILER:warn_bandwidth_exceeded-->';
+    let truncatedMidStream = false;
+    if (text.endsWith(TRAILER)) {
+      truncatedMidStream = true;
+      text = text.slice(0, -TRAILER.length).trimEnd();
+    }
+
     stopGenerationFx(true);
 
-    if (opts.forceBuild) { renderBuild(text, userBrief); return; }
+    if (truncatedMidStream) {
+      renderWarning('warn_bandwidth_exceeded', userBrief);
+      return;
+    }
 
     const firstLine = text.split('\n')[0].trim();
     const m = firstLine.match(/^TRIAGE::(\w+)$/);
+
+    // warn_bandwidth_exceeded is server-injected when the upstream model
+    // hits its output cap before any HTML is emitted. Honor it even on the
+    // forceBuild path — retrying would just hit the same truncation.
+    if (m && m[1] === 'warn_bandwidth_exceeded') {
+      renderWarning('warn_bandwidth_exceeded', userBrief);
+      return;
+    }
+
+    if (opts.forceBuild) { renderBuild(text, userBrief); return; }
+
     if (!m) { renderBuild(text, userBrief); return; }
 
     const verdict = m[1];
@@ -1761,7 +1816,7 @@ async function generateWithAI(opts) {
     else                                       renderBuild(rest, userBrief);
 
   } catch (err) {
-    clearTimeout(timeoutId);
+    if (silenceTimerId) clearTimeout(silenceTimerId);
     if (err && err.name === 'AbortError' && abortReason === 'cancel') {
       return;   // user cancelled — cancelGeneration() already cleaned up
     }
@@ -1861,6 +1916,26 @@ function noticeBodyHTML(entry, list) {
 
 function renderWarning(category, originalBrief) {
   aiDialogBody.innerHTML = noticeBodyHTML(pickWarning(category), pickAlternatives(3));
+
+  // Bandwidth-exceeded is a server-side stopgap for upstream truncation —
+  // retrying with forceBuild would hit the same wall, so swap "Try it
+  // anyway" for an on-brand joke button that just plays the failure chirp
+  // and dismisses. Alternatives still work for free.
+  if (category === 'warn_bandwidth_exceeded') {
+    aiDialogFooter.innerHTML =
+      '<button class="dlg-btn default" id="wait-975">Wait 97.5 hours</button>' +
+      '<button class="dlg-btn" id="warn-cancel">Cancel</button>';
+    wireAlternatives();
+    const w = document.getElementById('wait-975');
+    if (w) w.addEventListener('click', () => {
+      playDisconnect(false);
+      closeAIDialog();
+    });
+    const wc = document.getElementById('warn-cancel');
+    if (wc) wc.addEventListener('click', closeAIDialog);
+    return;
+  }
+
   aiDialogFooter.innerHTML =
     '<button class="dlg-btn default" id="try-anyway">Try it anyway</button>' +
     '<button class="dlg-btn" id="warn-cancel">Cancel</button>';
