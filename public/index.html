@@ -1823,101 +1823,12 @@ upgradeBtn.addEventListener('click', () => {
 });
 
 // ============================================================
-// Bandwidth warning + period-alternative copy banks.
-// The server triages the brief; the client renders the response.
-// ============================================================
-const WARNINGS = {
-  warn_scope: [
-    { heading: "Bandwidth Notice",
-      body: "At 28.8 kbps, the requested project would take approximately 14 years to download. The estimate was calculated on our IBM PC clone. The system recommends reducing scope before resubmission." },
-    { heading: "Capacity Determination",
-      body: "Resource allocation has reviewed your brief. The required infrastructure exceeds the capabilities of our shared Pentium 90, which is currently under a desk. A smaller project is recommended." },
-    { heading: "T1 Line Saturation",
-      body: "Constructing that page would saturate the T1 line we share with the dental office next door. They require it for X-ray emails. Please submit a brief of reduced bandwidth." },
-    { heading: "Project Scope Exceeded",
-      body: "The Project Manager has reviewed your brief and notes that the scope exceeds quarterly capacity. You may reduce the scope, or proceed at your own risk." },
-    { heading: "ETA: Sometime in 2039",
-      body: "We are pleased to inform you the project is technically achievable. Our project manager — a Tamagotchi named Steve — projects a completion date of approximately Q3 2039." }
-  ],
-  warn_anachronism: [
-    { heading: "Time Machine Required",
-      body: "The requested feature is not yet available in the current calendar year. You may wait, or submit a brief the 1990s can actually fulfill." },
-    { heading: "Anachronism Detected",
-      body: "Real-time multiplayer requires the future. A fax has been transmitted to MIT requesting an estimated availability date. We will respond when they respond." },
-    { heading: "Not Yet Invented",
-      body: "Mobile applications are not currently in service. Our most portable device is a Palm Pilot, which the office is reasonably suspicious of." },
-    { heading: "We Don't Have That Yet",
-      body: "Information Technology has confirmed that the requested technology arrives sometime after Y2K, contingent on Y2K being survivable. Please submit a smaller project in the interim." },
-    { heading: "From The Future Department",
-      body: "AI agents, blockchain, and the metaverse are not currently supported in this calendar year. The Future Department has logged your interest in its filing cabinet." }
-  ],
-  warn_nonsense: [
-    { heading: "Transmission Garbled",
-      body: "Line noise has rendered approximately 87% of your transmission illegible. Our records indicate that complete-sentence briefs are processed 340% faster than fragments." },
-    { heading: "Parser Service Notice",
-      body: "Our parser was unable to identify the project type. Please resubmit the request as a complete sentence describing the website you wish to publish." },
-    { heading: "Incomplete Work Order",
-      body: "Quality Assurance has flagged this submission as incomplete. Briefs below 5 meaningful characters are returned unprocessed per company policy." }
-  ],
-  warn_bandwidth_exceeded: [
-    { heading: "Connection Dropped at 97.4%",
-      body: "We received most of your idea, but the 28.8k pipeline gave up before the final CSS rules. The 56k upgrade would have made it. Want to try something smaller?" },
-    { heading: "Modem Timeout",
-      body: "Your idea exceeded the bandwidth of our shared T1 line. The dental office next door is using it for X-ray emails. Try a tighter brief?" },
-    { heading: "Packet Loss at 99%",
-      body: "The page was almost done. The last few bytes are floating somewhere in the upstream router. We have called them. No response. Try something smaller?" },
-    { heading: "Hard Drive Full",
-      body: "The output exceeded the 40 MB hard drive on our staging Pentium. We can free up space, but it'll take 4 to 6 days. Want to scope down instead?" },
-    { heading: "Bandwidth Exceeded",
-      body: "Our hosting plan from CompuServe maxes out at one page per visit. Yours required two. Try a more focused brief?" }
-  ],
-  refuse_abuse: [
-    { heading: "Request Declined",
-      body: "Compliance has determined that the submitted brief falls outside the scope of permitted output. The request will not be queued for production. Thank you for your continued interest in AI Netscape." }
-  ],
-  refuse_offtopic: [
-    { heading: "Outside Department Scope",
-      body: "AI Netscape constructs websites. Homework, legal opinions, medical diagnoses, and financial advice are handled by separate departments that no longer exist. Please submit a website brief." }
-  ]
-};
-
-function pickWarning(category) {
-  const bank = WARNINGS[category] || WARNINGS.warn_scope;
-  return bank[Math.floor(Math.random() * bank.length)];
-}
-
-const ALTERNATIVES = [
-  "A flaming animated logo for my homepage",
-  "A page with my name spinning around a 3D rotating globe",
-  "A hit counter shrine celebrating my 42 visitors",
-  "A guestbook with a sparkle background and rainbow text",
-  "A webring landing page for cat photography enthusiasts",
-  "A 'Best Viewed in Netscape Navigator' badge collection",
-  "An 'Under Construction' splash page with hazard tape",
-  "A Tamagotchi memorial page",
-  "A 'Where I've been on the Web' link list with star bullets",
-  "A Y2K survival tips landing page",
-  "A page celebrating my Beanie Baby collection",
-  "An ASCII art portrait of my cat Simba",
-  "A 'Mail Me!' rotating envelope graphic page",
-  "A homepage with seventeen marquee tags and three frames",
-  "A Spice Girls fan webring entry with MIDI music",
-  "A 'pets of the internet' photo gallery",
-  "A 'You are visitor #' page with sunburst graphics",
-  "A WebCrawler search tips guide",
-  "A 'Cool Links of the Week' page with star ratings",
-  "An animated logo for my band 'The HTML Tags'"
-];
-
-function pickAlternatives(n) {
-  const shuffled = ALTERNATIVES.slice().sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, n);
-}
-
-// ============================================================
 // AI Composer — brief -> /api/generate -> rendered in the editor.
 // The server holds the system prompt; the client sends only the
-// brief. The server returns either a TRIAGE verdict or a built page.
+// brief. The server streams either a built page or a single
+// `REFUSED::reason` line in narrow clear-harm cases. The client
+// fails fast on `REFUSED::` (detected on the first chunk) and shows
+// a small in-character dialog within ~1 second.
 // ============================================================
 const aiDialog       = document.getElementById('dlg-ai');
 const aiDialogBody   = aiDialog.querySelector('.dialog-body');
@@ -1960,29 +1871,28 @@ document.querySelectorAll('[data-close-ai]').forEach(el =>
 );
 
 // ---- Loading-state choreography ----
-// The text stages run on a fixed schedule from the moment we transition
-// into the generate phase (after triage). The progress bar is separately
-// driven by real bytes-received from the stream, so the bar can never
-// outrun the response — it always lands at 100% only after the build is
-// applied to the editor.
+// Text stages run on a fixed timeline from submit; the progress bar is
+// independent, driven by real bytes received. Stages stretch out to
+// ~4 minutes so the wait stays in-character even on slow generations,
+// each line getting progressively more familiar with the user.
 const LOADING_STAGES = [
   { at: 0,    text: 'Dialing 1-800-AINETSCAPE...' },
-  { at: 1.2,  text: 'Connecting to remote host...' },
-  { at: 2.5,  text: 'Negotiating V.34 handshake...' },
-  { at: 4.0,  text: 'Authenticating session...' },
-  { at: 5.5,  text: 'Sending compose request...' },
-  { at: 7.0,  text: 'Allocating server resources...' },
-  { at: 9.0,  text: 'Issuing instructions to the engine...' },
-  { at: 11.0, text: 'Considering color palettes...' },
-  { at: 13.0, text: 'Rejecting Helvetica...' },
-  { at: 15.0, text: 'Reading reference manuals...' },
-  { at: 17.0, text: 'Compiling response...' },
-  { at: 19.0, text: 'Generating page structure...' },
-  { at: 22.0, text: 'Receiving data...' },
-  { at: 25.0, text: 'Almost there...' },
-  { at: 28.0, text: 'Just a few more bits...' },
-  { at: 32.0, text: 'The line is slow today...' },
-  { at: 40.0, text: 'Still receiving. Capacity remains within tolerances.' }
+  { at: 1.5,  text: 'Connecting to remote host...' },
+  { at: 3.0,  text: 'Negotiating V.34 handshake...' },
+  { at: 5.0,  text: 'Authenticating session...' },
+  { at: 7.0,  text: 'Sending compose request...' },
+  { at: 10.0, text: 'Asking the AI very politely...' },
+  { at: 13.0, text: 'Considering color palettes...' },
+  { at: 16.0, text: 'Rejecting Helvetica...' },
+  { at: 20.0, text: 'Reading reference manuals...' },
+  { at: 25.0, text: 'Generating page structure...' },
+  { at: 30.0, text: 'Receiving data...' },
+  { at: 40.0, text: 'Still receiving. Thanks for your patience.' },
+  { at: 60.0, text: 'The line is slow today.' },
+  { at: 90.0, text: 'Have you considered making a sandwich?' },
+  { at: 120.0, text: 'We are confident this is almost done.' },
+  { at: 180.0, text: 'Genuinely amazing how committed you are to this.' },
+  { at: 240.0, text: 'At this point we are invested too.' }
 ];
 
 // Progress baseline — roughly the output-token count of a typical full
@@ -1996,7 +1906,7 @@ function renderLoadingState() {
   aiDialogBody.innerHTML =
     '<div class="ai-loading">' +
       '<div class="ai-loading-row"><span class="ai-spinner"></span>' +
-      '<span class="ai-loading-line" id="ai-loading-line">Analyzing request...</span></div>' +
+      '<span class="ai-loading-line" id="ai-loading-line">Dialing 1-800-AINETSCAPE...</span></div>' +
       '<div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>' +
     '</div>';
   aiDialogFooter.innerHTML = '<button class="dlg-btn" id="ai-cancel">Cancel</button>';
@@ -2042,43 +1952,33 @@ function captureRef() {
 function getRef() { return ssGet('ainetscape-ref') || null; }
 captureRef();
 
-// ---- POST to an endpoint and stream the response body as text ----
-// Both /api/triage and /api/generate return text/plain streams. The triage
-// stream is one short verdict line; the generate stream is the full page.
-async function postAndStream(url, body, signal, onChunkArrive, onProgress) {
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal,
-    body: JSON.stringify(body)
-  });
-  if (!resp.ok) {
-    let serverMsg = '';
-    try { const j = await resp.json(); serverMsg = (j && j.error) || ''; } catch (_) {}
-    const e = new Error('HTTP ' + resp.status + (serverMsg ? ': ' + serverMsg : ''));
-    e.status = resp.status;
-    throw e;
-  }
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let text = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    text += decoder.decode(value, { stream: true });
-    if (onChunkArrive) onChunkArrive();
-    if (onProgress) onProgress(text);
-  }
-  return text;
+// ---- Analytics beacon for client-side events the server can't see ----
+// Server logs ai_generation_completed / ai_refused / ai_disconnected /
+// ai_generation_failed on its own. This beacon distinguishes the two
+// disconnect cases (cancelled vs timed-out) for the funnel.
+let generationStartedAt = 0;
+function beaconEvent(event, brief) {
+  const duration_ms = generationStartedAt ? (Date.now() - generationStartedAt) : 0;
+  try {
+    fetch('/api/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, brief, ref: getRef(), duration_ms }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (_) {}
 }
 
 // ---- The generation flow ----
-// Phase 1: /api/triage classifies the brief in ~1s with Haiku 4.5. If the
-// verdict is a warn or refuse, render the modal immediately and never call
-// the expensive build endpoint. If it's 'build' (or the user pressed Try
-// Anyway, which sets forceBuild and skips triage entirely), continue to:
-// Phase 2: /api/generate streams the HTML page back, with the progress bar
-// driven by real bytes received from the stream.
+// Every brief goes directly to /api/generate (no pre-classifier). The
+// stream returns either raw HTML (build) or a single `REFUSED::reason`
+// line (rare clear-harm refusal). REFUSED is detected on the first chunk
+// and surfaced in ~1s. Otherwise the loading state runs to completion or
+// until the 5-minute hard timeout fires.
+const REFUSED_PREFIX = 'REFUSED::';
+const HARD_TIMEOUT_MS = 5 * 60 * 1000;   // 5 minutes
+const STREAM_SILENCE_MS = 30 * 1000;     // 30s safety net for dead streams
+
 async function generateWithAI(opts) {
   opts = opts || {};
   if (aiInFlight) return;                  // no double-submit while in flight
@@ -2095,13 +1995,18 @@ async function generateWithAI(opts) {
 
   aiInFlight = true;
   abortReason = null;
-  renderLoadingState();   // shows "Analyzing request..." with the bar at 0%
+  generationStartedAt = Date.now();
+  renderLoadingState();
+  startLoadingChoreography();
+  playModemSequence();
 
   currentAbort = new AbortController();
 
-  // Silence watchdog: 30s of no chunks on either endpoint = the line
-  // dropped. Re-armed on each chunk.
-  const STREAM_SILENCE_MS = 30000;
+  // Two timers:
+  //   silenceTimer  — fires if the stream goes 30s with no chunks
+  //   hardTimer     — absolute ceiling, fires at 5 minutes elapsed
+  // Either path sets abortReason='timeout' so the catch handler routes
+  // to the in-character timeout dialog.
   let silenceTimerId = null;
   const armSilence = () => {
     if (silenceTimerId) clearTimeout(silenceTimerId);
@@ -2112,79 +2017,85 @@ async function generateWithAI(opts) {
   };
   armSilence();
 
-  try {
-    // -------- Phase 1: triage (skipped on Try Anyway) --------
-    if (!opts.forceBuild) {
-      const triageText = await postAndStream(
-        '/api/triage',
-        { brief: userBrief, ref: getRef() },
-        currentAbort.signal,
-        armSilence
-      );
-      const tm = (triageText || '').trim().match(/^TRIAGE::(\w+)$/);
-      const verdict = tm && tm[1];
+  const hardTimerId = setTimeout(() => {
+    abortReason = 'timeout';
+    try { currentAbort.abort(); } catch (_) {}
+  }, HARD_TIMEOUT_MS);
 
-      if (verdict && verdict.indexOf('warn_') === 0) {
-        if (silenceTimerId) clearTimeout(silenceTimerId);
-        clearLoadingTimers();
-        renderWarning(verdict, userBrief);
-        return;
-      }
-      if (verdict && verdict.indexOf('refuse_') === 0) {
-        if (silenceTimerId) clearTimeout(silenceTimerId);
-        clearLoadingTimers();
-        renderRefusal(verdict);
-        return;
-      }
-      // verdict === 'build' (or unparseable, which we treat as build) →
-      // fall through to phase 2.
-    }
-
-    // -------- Phase 2: full generation --------
-    setLoadingLine('Dialing 1-800-AINETSCAPE...');
-    startLoadingChoreography();
-    playModemSequence();
-    armSilence();   // reset the watchdog for the long stream
-
-    let text = await postAndStream(
-      '/api/generate',
-      { brief: userBrief, ref: getRef(), forceBuild: !!opts.forceBuild },
-      currentAbort.signal,
-      armSilence,
-      updateTokenProgress
-    );
+  const clearTimers = () => {
     if (silenceTimerId) clearTimeout(silenceTimerId);
-    text = text.trim();
+    clearTimeout(hardTimerId);
+  };
 
-    if (!text) throw new Error('empty response');
+  let refusedDetected = false;
 
-    // Server-side mid-stream truncation marker.
-    const TRAILER = '<!--TRIAGE_TRAILER:warn_bandwidth_exceeded-->';
-    let truncatedMidStream = false;
-    if (text.endsWith(TRAILER)) {
-      truncatedMidStream = true;
-      text = text.slice(0, -TRAILER.length).trimEnd();
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: currentAbort.signal,
+      body: JSON.stringify({ brief: userBrief, ref: getRef() })
+    });
+
+    if (!resp.ok) {
+      clearTimers();
+      let serverMsg = '';
+      try { const j = await resp.json(); serverMsg = (j && j.error) || ''; } catch (_) {}
+      const e = new Error('HTTP ' + resp.status + (serverMsg ? ': ' + serverMsg : ''));
+      e.status = resp.status;
+      throw e;
     }
 
-    // Pre-text truncation marker (server emits the triage line if no HTML
-    // ever made it out — context window filled before output).
-    const firstLine = text.split('\n')[0].trim();
-    const isBandwidthLine = firstLine === 'TRIAGE::warn_bandwidth_exceeded';
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let text = '';
 
-    if (truncatedMidStream || isBandwidthLine) {
-      stopGenerationFx(true);
-      renderWarning('warn_bandwidth_exceeded', userBrief);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      armSilence();
+      updateTokenProgress(text);
+
+      // Fail-fast refusal detection. As soon as enough bytes have arrived
+      // to disambiguate, decide. REFUSED:: is rare; the common path is
+      // HTML starting with <!doctype html>.
+      if (!refusedDetected && text.length >= REFUSED_PREFIX.length) {
+        if (text.startsWith(REFUSED_PREFIX)) {
+          refusedDetected = true;
+          try { reader.cancel(); } catch (_) {}
+          break;
+        }
+      }
+    }
+    clearTimers();
+
+    if (refusedDetected) {
+      stopGenerationFx(false);
+      showRefusalDialog();
       return;
     }
+
+    text = text.trim();
+    if (!text) throw new Error('empty response');
 
     snapProgressToComplete();
     stopGenerationFx(true);
     renderBuild(text, userBrief);
 
   } catch (err) {
-    if (silenceTimerId) clearTimeout(silenceTimerId);
-    if (err && err.name === 'AbortError' && abortReason === 'cancel') {
-      return;   // user cancelled — cancelGeneration() already cleaned up
+    clearTimers();
+    if (err && err.name === 'AbortError') {
+      if (abortReason === 'cancel') {
+        beaconEvent('ai_cancelled', userBrief);
+        return;   // cancelGeneration() already cleaned up the UI
+      }
+      if (abortReason === 'timeout') {
+        beaconEvent('ai_timeout', userBrief);
+        stopGenerationFx(false);
+        showTimeoutDialog(userBrief);
+        return;
+      }
     }
     stopGenerationFx(false);
     handleAIError(err, userBrief);
@@ -2192,6 +2103,7 @@ async function generateWithAI(opts) {
     aiInFlight = false;
     currentAbort = null;
     abortReason = null;
+    generationStartedAt = 0;
   }
 }
 
@@ -2258,84 +2170,39 @@ function renderBuild(htmlText, originalBrief) {
   maybeShowUpgradeHint();
 }
 
-function alternativesHTML(list) {
-  return list.map(alt =>
-    '<button class="alt-suggestion" data-brief="' + escapeAttr(alt) + '">&rarr; ' + escapeHTML(alt) + '</button>'
-  ).join('');
+// ---- Refusal dialog ----
+// Server returned `REFUSED::reason`. We never show the reason text to the
+// user — the in-character message is the whole explanation. The actual
+// reason is logged server-side to MongoDB as `ai_refused` for analytics.
+const REFUSAL_LINES = [
+  'The line dropped on this one. The modem says it cannot help with that. Try a different brief?',
+  'Our switchboard operator declined to connect this call. Please try a different request.',
+  'Connection rejected by the host. Please try a different brief.'
+];
+function showRefusalDialog() {
+  const msg = REFUSAL_LINES[Math.floor(Math.random() * REFUSAL_LINES.length)];
+  closeAIDialog();
+  openCustomDialog('AI Composer',
+    '<div style="font-size:11px; padding:4px 0; max-width:380px;">' +
+      escapeHTML(msg) +
+    '</div>',
+    [{ label: 'OK', primary: true }]
+  );
 }
 
-function noticeBodyHTML(entry, list) {
-  return '<div style="font-size:11px; padding:4px 0;">' +
-      '<div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:12px;">' +
-        '<span style="font-size:24px; line-height:1;">⚠️</span>' +
-        '<div>' +
-          '<div style="font-weight:bold; margin-bottom:4px;">' + escapeHTML(entry.heading) + '</div>' +
-          '<div>' + escapeHTML(entry.body) + '</div>' +
-        '</div>' +
-      '</div>' +
-      '<div style="border-top:1px solid var(--sh); padding-top:8px; margin-top:8px;">' +
-        '<div style="margin-bottom:6px;">Bandwidth-friendly alternatives:</div>' +
-        alternativesHTML(list) +
-      '</div>' +
-    '</div>';
-}
-
-function renderWarning(category, originalBrief) {
-  aiDialogBody.innerHTML = noticeBodyHTML(pickWarning(category), pickAlternatives(3));
-
-  // Bandwidth-exceeded is a server-side stopgap for upstream truncation —
-  // retrying with forceBuild would hit the same wall, so swap "Try it
-  // anyway" for an on-brand joke button that just plays the failure chirp
-  // and dismisses. Alternatives still work for free.
-  if (category === 'warn_bandwidth_exceeded') {
-    aiDialogFooter.innerHTML =
-      '<button class="dlg-btn default" id="wait-975">Wait 97.5 hours</button>' +
-      '<button class="dlg-btn" id="warn-cancel">Cancel</button>';
-    wireAlternatives();
-    const w = document.getElementById('wait-975');
-    if (w) w.addEventListener('click', () => {
-      playDisconnect(false);
-      closeAIDialog();
-    });
-    const wc = document.getElementById('warn-cancel');
-    if (wc) wc.addEventListener('click', closeAIDialog);
-    return;
-  }
-
-  aiDialogFooter.innerHTML =
-    '<button class="dlg-btn default" id="try-anyway">Try it anyway</button>' +
-    '<button class="dlg-btn" id="warn-cancel">Cancel</button>';
-  wireAlternatives();
-  const ta = document.getElementById('try-anyway');
-  if (ta) ta.addEventListener('click', () => {
-    resetAIDialogToPrompt();
-    const p = document.getElementById('ai-prompt');
-    if (p) p.value = originalBrief;
-    generateWithAI({ brief: originalBrief, forceBuild: true });
-  });
-  const wc = document.getElementById('warn-cancel');
-  if (wc) wc.addEventListener('click', closeAIDialog);
-}
-
-function renderRefusal(category) {
-  aiDialogBody.innerHTML = noticeBodyHTML(pickWarning(category), pickAlternatives(3));
-  aiDialogFooter.innerHTML =
-    '<button class="dlg-btn default" id="ai-try-different">Try a different brief</button>';
-  wireAlternatives();
-  const td = document.getElementById('ai-try-different');
-  if (td) td.addEventListener('click', () => { resetAIDialogToPrompt(); setAIStatus('Ready.'); });
-}
-
-function wireAlternatives() {
-  aiDialogBody.querySelectorAll('.alt-suggestion').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const brief = btn.getAttribute('data-brief');
-      resetAIDialogToPrompt();
-      const p = document.getElementById('ai-prompt');
-      if (p) p.value = brief;
-      generateWithAI({ brief: brief });
-    });
-  });
+// ---- Hard-timeout dialog (5-minute ceiling reached) ----
+function showTimeoutDialog() {
+  closeAIDialog();
+  openCustomDialog('Connection Lost',
+    '<div style="font-size:11px; padding:4px 0; max-width:380px; white-space:pre-line;">' +
+      escapeHTML(
+        'Connection lost — the line dropped before transmission completed. ' +
+        'This sometimes happens with longer briefs over a 28.8k modem. ' +
+        'Please try again or try a smaller brief.'
+      ) +
+    '</div>',
+    [{ label: 'OK', primary: true }]
+  );
 }
 
 function handleAIError(err, originalBrief) {

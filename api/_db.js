@@ -28,13 +28,18 @@ function hashIp(ip) {
 }
 
 export async function logEvent({
-  ip, kind = 'generate', brief, data, ref, forceBuild, duration_ms,
+  ip, event, kind, brief, data, ref, forceBuild, duration_ms,
   referrer, user_agent, verdict
 }) {
   const d = await getDb();
   const doc = {
     ts: new Date(),
-    kind,                                                 // 'generate' | 'triage'
+    // Granular event type for funnel analytics:
+    //   ai_generation_completed | ai_refused | ai_generation_failed |
+    //   ai_disconnected | ai_cancelled | ai_timeout
+    event: event || 'ai_generation_completed',
+    // Back-compat discriminator; older entries used this.
+    kind: kind || 'generate',
     ip_hash: hashIp(ip),                                  // SHA-256 of IP+salt; never the raw IP
     brief_length: brief ? brief.length : 0,
     brief_preview: brief ? brief.slice(0, 100) : '',      // first 100 chars only, for spam review
@@ -46,7 +51,7 @@ export async function logEvent({
     utm_ref: ref ? String(ref).slice(0, 40) : null,       // 'marc', 'a16z', 'tw', 'hn', etc.
     user_agent: user_agent ? String(user_agent).slice(0, 200) : null
   };
-  if (kind === 'generate') doc.force_build = !!forceBuild;
-  if (kind === 'triage')   doc.verdict = verdict || null;
+  if (forceBuild !== undefined) doc.force_build = !!forceBuild;
+  if (verdict) doc.verdict = String(verdict).slice(0, 200);
   await d.collection('generations').insertOne(doc);
 }

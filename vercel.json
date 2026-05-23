@@ -39,7 +39,7 @@
   ],
   "functions": {
     "api/generate.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     }
   }
 }
