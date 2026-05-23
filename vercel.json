@@ -40,6 +40,12 @@
   "functions": {
     "api/generate.js": {
       "maxDuration": 300
+    },
+    "api/page/[slug].js": {
+      "maxDuration": 10
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/p/:slug", "destination": "/api/page/:slug" }
+  ]
 }

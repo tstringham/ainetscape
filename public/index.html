@@ -551,6 +551,32 @@
     background: white;
   }
 
+  /* Share overlay — small magenta/cyan button on top-right of the iframe.
+     Same anachronistic palette as the AI Composer button to signal "this
+     is also future-from-1997 tech." Only appears when sharing is wired. */
+  .share-overlay {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 20;
+    padding: 5px 12px;
+    background: linear-gradient(180deg, #ff44ff 0%, #cc00ff 50%, #00ccff 100%);
+    color: #000;
+    font-family: "MS Sans Serif", "Microsoft Sans Serif", Tahoma, sans-serif;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.02em;
+    border: 2px solid;
+    border-color: #ffff00 #ff00ff #ff00ff #ffff00;
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.3);
+    cursor: pointer;
+  }
+  .share-overlay:hover { border-color: #ffff00 #00ffff #00ffff #ffff00; }
+  .share-overlay:active {
+    border-color: #ff00ff #ffff00 #ffff00 #ff00ff;
+    box-shadow: 1px 1px 0 rgba(0,0,0,0.3);
+  }
+
   /* Source view textarea */
   #source-view {
     display: none;
@@ -1272,6 +1298,11 @@ let inSourceMode = false;
 // longer escapes the AI Netscape chrome. Null when in plain contentEditable
 // mode (starter doc / New / Open of a body-fragment file).
 let currentDocHTML = null;
+// Share slug for the currently-mounted AI page. Null if the server
+// didn't return one (sharing disabled because MONGODB_URI isn't set,
+// or we're showing the starter doc / an opened fragment).
+let currentShareSlug = null;
+
 function renderGeneratedIntoIframe(html) {
   if (inSourceMode) toggleSource();
   const iframe = document.createElement('iframe');
@@ -1283,9 +1314,22 @@ function renderGeneratedIntoIframe(html) {
   editor.innerHTML = '';
   editor.appendChild(iframe);
   editor.classList.add('has-iframe');
+
+  // Share button overlay — only rendered when the server returned a slug
+  // (i.e. sharing is wired and the page has a public URL).
+  if (currentShareSlug) {
+    const btn = document.createElement('button');
+    btn.className = 'share-overlay';
+    btn.type = 'button';
+    btn.innerHTML = '<span aria-hidden="true">🔗</span> Share';
+    btn.title = 'Share this page';
+    btn.addEventListener('click', openShareDialog);
+    editor.appendChild(btn);
+  }
 }
 function exitIframeMode() {
   currentDocHTML = null;
+  currentShareSlug = null;
   editor.classList.remove('has-iframe');
 }
 
@@ -2117,6 +2161,10 @@ async function generateWithAI(opts) {
       throw e;
     }
 
+    // Capture the share slug from the response header (server only sets it
+    // when MONGODB_URI is wired, so this stays null when sharing is off).
+    currentShareSlug = resp.headers.get('x-ainetscape-share-slug') || null;
+
     const reader = resp.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let text = '';
@@ -2283,6 +2331,66 @@ function showTimeoutDialog() {
     '</div>',
     [{ label: 'OK', primary: true }]
   );
+}
+
+// ---- Share dialog ----
+// Opens when the user clicks the iframe overlay's Share button. Shows the
+// canonical /p/:slug URL with a Copy button + a native Web Share button on
+// browsers that support it (most mobile, increasingly common on desktop).
+function openShareDialog() {
+  if (!currentShareSlug) return;
+  const shareUrl = location.origin + '/p/' + currentShareSlug;
+  const body =
+    '<div style="font-size:11px; padding:4px 0; max-width:420px;">' +
+      '<div style="margin-bottom:10px;">Your page has its own URL. ' +
+      'Anyone with this link can view it.</div>' +
+      '<input id="share-url-input" type="text" readonly value="' + escapeAttr(shareUrl) + '" ' +
+        'style="width:100%; box-sizing:border-box; padding:4px 6px; font-size:11px; ' +
+        'font-family:\'Courier New\',monospace; border:1px solid var(--sh-dk); ' +
+        'background:#fff;" />' +
+      '<div id="share-toast" style="font-size:10px; color:#080; margin-top:6px; ' +
+        'visibility:hidden;">Link copied to clipboard.</div>' +
+    '</div>';
+  const buttons = [{ label: 'Copy Link', primary: true, action: () => copyShareUrl(shareUrl, true) }];
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    buttons.push({ label: 'Share...', action: () => nativeShare(shareUrl) });
+  }
+  buttons.push({ label: 'Close' });
+  openCustomDialog('Share This Page', body, buttons);
+  setTimeout(() => {
+    const inp = document.getElementById('share-url-input');
+    if (inp) { inp.focus(); inp.select(); }
+  }, 0);
+  trackEvent('share_dialog_opened', { slug: currentShareSlug });
+}
+function copyShareUrl(url, viaButton) {
+  const finish = (ok) => {
+    const t = document.getElementById('share-toast');
+    if (t) {
+      t.textContent = ok ? 'Link copied to clipboard.' : 'Could not copy — select the URL above and copy manually.';
+      t.style.color = ok ? '#080' : '#a00';
+      t.style.visibility = 'visible';
+    }
+    if (ok && viaButton) showToast('Link copied.');
+    trackEvent('share_link_copied', { slug: currentShareSlug, ok: !!ok });
+  };
+  try {
+    navigator.clipboard.writeText(url).then(() => finish(true), () => finish(false));
+  } catch (_) {
+    finish(false);
+  }
+}
+function nativeShare(url) {
+  try {
+    navigator.share({
+      title: 'I made this with AI Netscape',
+      text: 'Check out the page I just generated:',
+      url
+    }).then(
+      () => trackEvent('share_native_completed', { slug: currentShareSlug }),
+      () => {}    // user cancelled or share failed; no-op
+    );
+  } catch (_) {}
 }
 
 function handleAIError(err, originalBrief) {

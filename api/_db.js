@@ -20,7 +20,22 @@ async function getDb() {
   client = new MongoClient(process.env.MONGODB_URI, { maxPoolSize: 5 });
   await client.connect();
   db = client.db(DB_NAME);
+  // Ensure the share_slug index exists for fast /p/:slug lookup.
+  // Sparse so older rows without a slug aren't included.
+  try {
+    await db.collection('generations').createIndex(
+      { share_slug: 1 },
+      { sparse: true, name: 'share_slug_idx' }
+    );
+  } catch (_) { /* index may already exist; ignore */ }
   return db;
+}
+
+// Look up a generation by its share slug for /api/page/[slug] serving.
+export async function findBySlug(slug) {
+  if (!slug) return null;
+  const d = await getDb();
+  return d.collection('generations').findOne({ share_slug: slug });
 }
 
 function hashIp(ip) {
@@ -29,7 +44,7 @@ function hashIp(ip) {
 
 export async function logEvent({
   ip, event, kind, brief, data, ref, forceBuild, duration_ms,
-  referrer, user_agent, verdict, body_html
+  referrer, user_agent, verdict, body_html, share_slug
 }) {
   const d = await getDb();
   const doc = {
@@ -60,5 +75,6 @@ export async function logEvent({
     doc.body_html = String(body_html);
     doc.body_size_bytes = doc.body_html.length;
   }
+  if (share_slug) doc.share_slug = String(share_slug);
   await d.collection('generations').insertOne(doc);
 }

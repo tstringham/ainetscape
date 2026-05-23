@@ -7,6 +7,20 @@
 // keys are namespaced — neither endpoint can starve the other.
 
 import { Redis } from '@upstash/redis';
+import crypto from 'crypto';
+
+// ============================================================
+// Share-slug generator. 10-char base62 = 62^10 ≈ 8.4×10^17 keyspace,
+// collision-safe at internet scale, URL-friendly, 10 chars fits in a
+// tweet without arm-wrestling.
+// ============================================================
+const SLUG_ALPHA = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+export function makeShareSlug(len = 10) {
+  const bytes = crypto.randomBytes(len);
+  let out = '';
+  for (let i = 0; i < len; i++) out += SLUG_ALPHA[bytes[i] % 62];
+  return out;
+}
 
 // ============================================================
 // IP + body extraction

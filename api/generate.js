@@ -11,7 +11,7 @@
 
 import {
   getCallerIp, parseBody, rateLimit, rateLimitMessage,
-  makeCache, logEvent
+  makeCache, logEvent, makeShareSlug
 } from './_shared.js';
 
 // xAI experiment. Provider/model both swapped in one place. The Anthropic
@@ -106,7 +106,14 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: rateLimitMessage(rl.scope) });
   }
 
-  // Cache hit — replay the assembled text as a single chunk.
+  // Sharing only "lights up" when Mongo is wired — without persistent
+  // storage, /p/:slug would 404. Suppress the header in that case so the
+  // client hides the Share UI rather than offering a broken link.
+  const sharingEnabled = !!process.env.MONGODB_URI;
+
+  // Cache hit — replay the assembled text as a single chunk. Reuse the
+  // slug stored on the cache entry so two visitors with the same brief
+  // share the same canonical URL.
   const cacheKey = brief;
   const cached = cache.get(cacheKey);
   if (cached) {
@@ -116,11 +123,16 @@ export default async function handler(req, res) {
       .join('');
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
+    if (sharingEnabled && cached.share_slug) {
+      res.setHeader('X-AINetscape-Share-Slug', cached.share_slug);
+    }
     res.status(200);
     res.write(cachedText);
     res.end();
     return;
   }
+
+  const shareSlug = sharingEnabled ? makeShareSlug() : null;
 
   const startedAt = Date.now();
   let streamingStarted = false;
@@ -172,6 +184,7 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Accel-Buffering', 'no');
+    if (shareSlug) res.setHeader('X-AINetscape-Share-Slug', shareSlug);
     res.status(200);
     streamingStarted = true;
 
@@ -244,11 +257,16 @@ export default async function handler(req, res) {
       content: [{ type: 'text', text: accumulated }],
       stop_reason: stopReason,
       model: MODEL,
-      usage
+      usage,
+      share_slug: shareSlug    // sticky across cache hits
     };
     // Cache successful builds and refusals alike; a repeated identical
     // brief should get the same answer instantly.
     cache.set(cacheKey, cachePayload);
+
+    // Only record the share slug for actual successful builds, not refusals
+    // or partial disconnects — those shouldn't be publicly addressable.
+    const persistedSlug = (event === 'ai_generation_completed') ? shareSlug : null;
 
     logEvent({
       ip, event, brief, data: cachePayload, ref,
@@ -258,7 +276,8 @@ export default async function handler(req, res) {
       verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null,
       // Archive whatever the model emitted — full HTML on success, REFUSED
       // line on refusal, partial body if the client disconnected mid-stream.
-      body_html: accumulated || null
+      body_html: accumulated || null,
+      share_slug: persistedSlug
     });
   } catch (err) {
     console.error('Handler error:', err);
