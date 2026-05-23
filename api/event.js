@@ -31,7 +31,10 @@ export default async function handler(req, res) {
     return res.status(204).end();   // silently drop — analytics, not user-facing
   }
 
-  logEvent({
+  // Await: Vercel can freeze the function instance the moment the handler
+  // resolves, dropping unawaited Mongo writes (same class of bug as the
+  // generate.js share_slug 404).
+  await logEvent({
     ip,
     event,
     brief: typeof body.brief === 'string' ? body.brief.slice(0, 6000) : '',

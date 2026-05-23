@@ -168,7 +168,7 @@ export default async function handler(req, res) {
       let errBody = null;
       try { errBody = await upstream.json(); } catch (_) {}
       console.error('xAI API error:', upstream.status, errBody && (errBody.error || errBody));
-      logEvent({
+      await logEvent({
         ip, event: 'ai_generation_failed', brief, ref,
         duration_ms: Date.now() - startedAt,
         referrer: req.headers.referer || null,
@@ -268,7 +268,11 @@ export default async function handler(req, res) {
     // or partial disconnects — those shouldn't be publicly addressable.
     const persistedSlug = (event === 'ai_generation_completed') ? shareSlug : null;
 
-    logEvent({
+    // Must await: the share slug header has already been sent to the client,
+    // so the Mongo row must be persisted before the function returns — Vercel
+    // can freeze the instance the moment the handler resolves, and an
+    // unawaited insert would land /p/:slug as a 404.
+    await logEvent({
       ip, event, brief, data: cachePayload, ref,
       duration_ms: Date.now() - startedAt,
       referrer: req.headers.referer || req.headers.referrer || null,
@@ -284,7 +288,7 @@ export default async function handler(req, res) {
     if (streamingStarted) {
       try { res.end(); } catch (_) {}
     } else {
-      logEvent({
+      await logEvent({
         ip, event: 'ai_generation_failed', brief, ref,
         duration_ms: Date.now() - startedAt,
         referrer: req.headers.referer || null,
