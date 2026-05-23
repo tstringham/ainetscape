@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
-<title>AI Netscape — Composer for the Information Superhighway</title>
+<title>AI Netscape: 1997's AI-Powered HTML Editor</title>
 
 <!-- Discovery -->
 <meta name="description" content="A loving recreation of Netscape Composer (1997) with one anachronistic twist: an AI button that builds state-of-the-art websites. Built as a love letter to the early web.">
@@ -799,7 +799,7 @@
 
 <div class="window" id="main-window">
   <div class="titlebar">
-    <span class="title">AI Netscape - [<span class="doc" id="doc-title">Untitled</span>]</span>
+    <span class="title">AI Netscape: 1997's AI-Powered HTML Editor</span>
     <div class="titlebar-btns">
       <button class="titlebar-btn" title="Minimize">_</button>
       <button class="titlebar-btn" title="Maximize">▢</button>
@@ -1031,6 +1031,8 @@
         <ul>
           <li><font size="3">Deep Thought 7.5</font></li>
           <li><font size="3">Not panicking</font></li>
+          <li><font size="3">Cleaning my mouse</font></li>
+          <!-- <li><font size="3">Applying to <a href="https://a16z.com">Andreessen Horowitz</a></font></li> -->
           <li><font size="3">My cat, Simba</font></li>
         </ul>
         <hr>
@@ -1239,7 +1241,11 @@ const sourceView = document.getElementById('source-view');
 const statusMsg = document.getElementById('status-msg');
 const statusTags = document.getElementById('status-tags');
 const statusClock = document.getElementById('status-clock');
-const docTitle = document.getElementById('doc-title');
+// The window chrome titlebar is now a static brand string ("AI Netscape:
+// 1997's AI-Powered HTML Editor") and never changes during a session.
+// docTitle remains in memory only — used by Save downloads and Preview tabs
+// so generated HTML files still carry a sensible <title> tag.
+let docTitle = 'My Home Page';
 const toast = document.getElementById('toast');
 
 let savedSelection = null;
@@ -1354,12 +1360,12 @@ document.getElementById('main-toolbar').addEventListener('click', e => {
 function newDoc() {
   if (!confirm('Discard current document and start a new one?')) return;
   editor.innerHTML = '<p><br></p>';
-  docTitle.textContent = 'Untitled';
+  docTitle = 'Untitled';
   setStatus('New document created.');
 }
 function saveDoc() {
-  const title = prompt('Page title:', docTitle.textContent) || docTitle.textContent;
-  docTitle.textContent = title;
+  const title = prompt('Page title:', docTitle) || docTitle;
+  docTitle = title;
   const html = wrapAsFullPage(editor.innerHTML, title);
   const blob = new Blob([html], {type: 'text/html'});
   const a = document.createElement('a');
@@ -1383,7 +1389,7 @@ function openDoc() {
       const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(txt);
       editor.innerHTML = body ? body[1] : txt;
       const t = /<title>([\s\S]*?)<\/title>/i.exec(txt);
-      if (t) docTitle.textContent = t[1].trim();
+      if (t) docTitle = t[1].trim();
       setStatus('Opened ' + f.name);
     };
     r.readAsText(f);
@@ -1406,7 +1412,7 @@ ${bodyHTML}
 }
 
 function preview() {
-  const html = wrapAsFullPage(editor.innerHTML, docTitle.textContent);
+  const html = wrapAsFullPage(editor.innerHTML, docTitle);
   const w = window.open('', '_blank');
   if (!w) {
     showAlert('Preview', 'The preview window could not be opened.\n\nPlease allow pop-up windows for this site and try again.');
@@ -2244,7 +2250,7 @@ function renderBuild(htmlText, originalBrief) {
 
   if (inSourceMode) toggleSource();   // return to the visual view if needed
   editor.innerHTML = injected + newBody;
-  if (titleMatch) docTitle.textContent = (titleMatch[1].trim().slice(0, 80)) || 'Untitled';
+  if (titleMatch) docTitle = (titleMatch[1].trim().slice(0, 80)) || 'Untitled';
 
   closeAIDialog();
   showToast('Document generated successfully.');
@@ -2615,10 +2621,10 @@ function publishDialog() {
 }
 
 function setPageTitleFlow() {
-  const cur = docTitle.textContent;
+  const cur = docTitle;
   const next = prompt('Page Title:', cur);
   if (next == null) return;
-  docTitle.textContent = next.slice(0, 80) || 'Untitled';
+  docTitle = next.slice(0, 80) || 'Untitled';
   setStatus('Page title updated.');
 }
 
@@ -2736,7 +2742,7 @@ function nudgeEditorFont(delta) {
 
 function showPageInfo() {
   const url = location.href;
-  const title = docTitle.textContent;
+  const title = docTitle;
   const bytes = new Blob([editor.innerHTML]).size;
   showAlert('Page Info',
     'Location:       ' + url + '\n' +
@@ -2807,7 +2813,7 @@ function showDocInfo() {
   const transferAt288 = (bytes * 8 / 28800).toFixed(1);
   const transferAt56 = (bytes * 8 / 56000).toFixed(1);
   showAlert('Document Information',
-    'Title:               ' + docTitle.textContent + '\n' +
+    'Title:               ' + docTitle + '\n' +
     'Words:               ' + words + '\n' +
     'Document size:       ' + bytes.toLocaleString() + ' bytes\n' +
     'Transfer time @ 28.8 kbps:  ' + transferAt288 + ' seconds\n' +
