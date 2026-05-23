@@ -539,6 +539,18 @@
   @keyframes blink { to { visibility: hidden; } }
   #editor marquee { display: inline-block; }
 
+  /* When an AI-generated page is mounted, the editor hosts a sandboxed
+     iframe instead of contentEditable content. Drop padding so the page
+     renders edge-to-edge; force height so the iframe can fill 100%. */
+  #editor.has-iframe { padding: 0; height: 100%; position: relative; }
+  .editor-iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: white;
+  }
+
   /* Source view textarea */
   #source-view {
     display: none;
@@ -1254,6 +1266,28 @@ const toast = document.getElementById('toast');
 
 let savedSelection = null;
 let inSourceMode = false;
+// When an AI-generated page is mounted, currentDocHTML holds the full HTML
+// doc (DOCTYPE/<html>/<head>/<body>) and the editor displays it inside a
+// sandboxed iframe for CSS isolation — generated `position: fixed` no
+// longer escapes the AI Netscape chrome. Null when in plain contentEditable
+// mode (starter doc / New / Open of a body-fragment file).
+let currentDocHTML = null;
+function renderGeneratedIntoIframe(html) {
+  if (inSourceMode) toggleSource();
+  const iframe = document.createElement('iframe');
+  iframe.className = 'editor-iframe';
+  // scripts only; no allow-same-origin so the iframe gets a unique opaque
+  // origin and can't reach ainetscape.com cookies / localStorage / Mongo.
+  iframe.setAttribute('sandbox', 'allow-scripts');
+  iframe.srcdoc = html;
+  editor.innerHTML = '';
+  editor.appendChild(iframe);
+  editor.classList.add('has-iframe');
+}
+function exitIframeMode() {
+  currentDocHTML = null;
+  editor.classList.remove('has-iframe');
+}
 
 const reduceMotion = (function () {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
@@ -1363,6 +1397,7 @@ document.getElementById('main-toolbar').addEventListener('click', e => {
 // ---- File ops ----
 function newDoc() {
   if (!confirm('Discard current document and start a new one?')) return;
+  exitIframeMode();
   editor.innerHTML = '<p><br></p>';
   docTitle = 'Untitled';
   setStatus('New document created.');
@@ -1370,7 +1405,11 @@ function newDoc() {
 function saveDoc() {
   const title = prompt('Page title:', docTitle) || docTitle;
   docTitle = title;
-  const html = wrapAsFullPage(editor.innerHTML, title);
+  // AI-generated pages are already complete documents — save verbatim.
+  // Edited starter docs are body fragments — wrap as a 1997-style page.
+  const html = currentDocHTML
+    ? currentDocHTML
+    : wrapAsFullPage(editor.innerHTML, title);
   const blob = new Blob([html], {type: 'text/html'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1388,12 +1427,19 @@ function openDoc() {
     if (!f) return;
     const r = new FileReader();
     r.onload = () => {
-      // Strip out everything outside <body> if it's a full page, else use as-is.
       const txt = r.result;
-      const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(txt);
-      editor.innerHTML = body ? body[1] : txt;
       const t = /<title>([\s\S]*?)<\/title>/i.exec(txt);
       if (t) docTitle = t[1].trim();
+      // A full document → iframe sandbox (preserves its CSS / layout).
+      // A body fragment → contentEditable.
+      if (/<!doctype html|<html\b/i.test(txt)) {
+        currentDocHTML = txt;
+        renderGeneratedIntoIframe(txt);
+      } else {
+        exitIframeMode();
+        const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(txt);
+        editor.innerHTML = body ? body[1] : txt;
+      }
       setStatus('Opened ' + f.name);
     };
     r.readAsText(f);
@@ -1416,7 +1462,7 @@ ${bodyHTML}
 }
 
 function preview() {
-  const html = wrapAsFullPage(editor.innerHTML, docTitle);
+  const html = currentDocHTML || wrapAsFullPage(editor.innerHTML, docTitle);
   const w = window.open('', '_blank');
   if (!w) {
     showAlert('Preview', 'The preview window could not be opened.\n\nPlease allow pop-up windows for this site and try again.');
@@ -1427,17 +1473,27 @@ function preview() {
 
 function toggleSource() {
   if (!inSourceMode) {
-    sourceView.value = formatHTML(editor.innerHTML);
+    sourceView.value = formatHTML(currentDocHTML || editor.innerHTML);
     editor.parentElement.style.display = 'none';
     sourceView.style.display = 'block';
     sourceView.focus();
     inSourceMode = true;
     setStatus('Viewing HTML source.');
   } else {
-    editor.innerHTML = sourceView.value;
+    const edited = sourceView.value;
     editor.parentElement.style.display = 'block';
     sourceView.style.display = 'none';
     inSourceMode = false;
+    // If the edited source is a full document, re-mount in the iframe so
+    // edits to AI-generated pages take effect cleanly. Otherwise return to
+    // contentEditable on the raw fragment.
+    if (/<!doctype html|<html\b|<body\b/i.test(edited)) {
+      currentDocHTML = edited;
+      renderGeneratedIntoIframe(edited);
+    } else {
+      exitIframeMode();
+      editor.innerHTML = edited;
+    }
     setStatus('Returned to WYSIWYG.');
   }
 }
@@ -2163,32 +2219,30 @@ function closeAIDialog() {
   setAIStatus('Ready.');
 }
 
-// Render a built page: inject its <style>/<link> + <body> into the editor.
+// Render a built page in a sandboxed iframe. CSS isolation means generated
+// `position: fixed` headers, full-bleed backgrounds, and global rules stay
+// contained inside the AI Netscape chrome — they no longer escape.
 function renderBuild(htmlText, originalBrief) {
   let html = String(htmlText || '').trim();
   html = html.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
   html = html.replace(/^TRIAGE::\w+\s*/i, '').trim();
 
-  if (!/<(!doctype html|html|body|main|section|header|div)/i.test(html)) {
-    handleAIError(new Error('garbled'), originalBrief);
-    return;
+  if (!/<(!doctype html|html|body)/i.test(html)) {
+    // Not a full document — fall back to the legacy inline injection so a
+    // model output that's just a body fragment still renders.
+    if (!/<(main|section|header|div)/i.test(html)) {
+      handleAIError(new Error('garbled'), originalBrief);
+      return;
+    }
+    exitIframeMode();
+    if (inSourceMode) toggleSource();
+    editor.innerHTML = html;
+  } else {
+    const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
+    if (titleMatch) docTitle = (titleMatch[1].trim().slice(0, 80)) || 'Untitled';
+    currentDocHTML = html;
+    renderGeneratedIntoIframe(html);
   }
-
-  const bodyMatch  = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
-  const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
-  const styleTags  = html.match(/<style[\s\S]*?<\/style>/gi) || [];
-  const linkTags   = html.match(/<link[^>]*>/gi) || [];
-
-  // Inject the styles + font links inline at the top of the editor body so
-  // the generated design renders inside Composer's editing surface.
-  let injected = '';
-  linkTags.forEach(m => { injected += m; });
-  styleTags.forEach(m => { injected += m; });
-  const newBody = bodyMatch ? bodyMatch[1] : html;
-
-  if (inSourceMode) toggleSource();   // return to the visual view if needed
-  editor.innerHTML = injected + newBody;
-  if (titleMatch) docTitle = (titleMatch[1].trim().slice(0, 80)) || 'Untitled';
 
   closeAIDialog();
   showToast('Document generated successfully.');
