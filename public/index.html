@@ -1660,7 +1660,7 @@ class ModemSynth {
     if (this.ctx) return;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.18; // moderate volume — not aggressive
+    this.master.gain.value = 0.25; // audible enough to register without being aggressive
     this.master.connect(this.ctx.destination);
   }
 
@@ -1715,7 +1715,9 @@ class ModemSynth {
 
   async play() {
     this.ensureContext();
-    if (this.ctx.state === 'suspended') await this.ctx.resume();
+    // Always try to resume — some Safari versions report 'running' when the
+    // context is actually still gated and only an explicit resume() warms it.
+    try { await this.ctx.resume(); } catch (_) {}
 
     const s = this.speed || 1;
     let t = this.ctx.currentTime;
@@ -1875,12 +1877,32 @@ function playModemSequence() {
       modemTimers.push(setTimeout(humLoop, 3800));
     };
     modemTimers.push(setTimeout(humLoop, durMs));
-  }).catch(() => {});
+  }).catch(err => {
+    // Surface to console so future audio failures aren't invisible.
+    console.warn('Modem audio failed to start:', err);
+  });
 }
 
+// Pre-warm the AudioContext on the very first user interaction with the
+// page (button click, key press, touch). Without this, the context isn't
+// created until the user clicks Generate — meaning the audio system has
+// less time to settle before the handshake fires, and on some Safari
+// versions the lazily-created context starts in a weird state. Eager
+// warming inside any user gesture sidesteps both issues.
+function warmAudioOnce() {
+  try { modem.ensureContext(); modem.ctx && modem.ctx.resume(); } catch (_) {}
+  window.removeEventListener('click', warmAudioOnce);
+  window.removeEventListener('keydown', warmAudioOnce);
+  window.removeEventListener('touchstart', warmAudioOnce);
+}
+window.addEventListener('click', warmAudioOnce, { once: true });
+window.addEventListener('keydown', warmAudioOnce, { once: true });
+window.addEventListener('touchstart', warmAudioOnce, { once: true });
+
 // ============================================================
-// The 56k upgrade button. Modem audio is off by default; the
-// user upgrades their connection to enable it.
+// The 56k upgrade button. Modem audio is on by default for everyone
+// (reduceMotion users excepted); the upgrade button just doubles the
+// handshake playback speed for the bit.
 // ============================================================
 const upgradeBtn = document.getElementById('modem-upgrade');
 let modemUpgraded = lsGet('modem-upgraded') === '1';
