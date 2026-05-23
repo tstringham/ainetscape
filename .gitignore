@@ -4,3 +4,6 @@
 node_modules/
 .DS_Store
 .env*.local
+
+# Generated at build time by scripts/build_lastupdated.mjs
+public/last-updated.js
