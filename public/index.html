@@ -1717,7 +1717,7 @@ async function generateWithAI(opts) {
   playModemSequence();
 
   currentAbort = new AbortController();
-  const timeoutId = setTimeout(() => { abortReason = 'timeout'; try { currentAbort.abort(); } catch (_) {} }, 60000);
+  const timeoutId = setTimeout(() => { abortReason = 'timeout'; try { currentAbort.abort(); } catch (_) {} }, 120000);
 
   try {
     const resp = await fetch('/api/generate', {

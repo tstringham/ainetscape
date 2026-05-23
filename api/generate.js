@@ -11,7 +11,7 @@
 import { Redis } from '@upstash/redis';
 
 const MODEL                     = 'claude-sonnet-4-6';
-const MAX_TOKENS                = 8000;
+const MAX_TOKENS                = 4500;
 const MIN_BRIEF_LENGTH          = 3;
 const MAX_BRIEF_LENGTH          = 6000;
 const RATE_LIMIT_PER_MIN        = 5;     // generations per minute, per IP
