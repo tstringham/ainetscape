@@ -14,7 +14,10 @@ import {
   makeCache, logEvent
 } from './_shared.js';
 
-const MODEL                    = 'claude-sonnet-4-6';
+// xAI experiment. Provider/model both swapped in one place. The Anthropic
+// branch is preserved in git history (last commit before this one) for
+// easy revert if Grok output quality doesn't hold up.
+const MODEL                    = 'grok-4';
 const MAX_TOKENS               = 8000;
 const MIN_BRIEF_LENGTH         = 3;
 const MAX_BRIEF_LENGTH         = 6000;
@@ -73,9 +76,9 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'AI Composer is temporarily offline for maintenance. Please try again later.' });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) {
-    console.error('Missing ANTHROPIC_API_KEY env var');
+    console.error('Missing XAI_API_KEY env var');
     return res.status(500).json({ error: 'The service is not configured correctly.' });
   }
 
@@ -129,30 +132,30 @@ export default async function handler(req, res) {
   req.on('close', () => { clientGone = true; });
 
   try {
-    const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+    // xAI Chat Completions — OpenAI-shaped API. System prompt is the first
+    // message rather than a top-level field; no prompt caching available
+    // (the 3KB system prompt gets re-billed each request).
+    const upstream = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Authorization': 'Bearer ' + apiKey
       },
       body: JSON.stringify({
         model: MODEL,
         max_tokens: MAX_TOKENS,
         stream: true,
-        system: [{
-          type: 'text',
-          text: SYSTEM_PROMPT,
-          cache_control: { type: 'ephemeral' }
-        }],
-        messages: [{ role: 'user', content: 'Brief:\n\n' + brief }]
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user',   content: 'Brief:\n\n' + brief }
+        ]
       })
     });
 
     if (!upstream.ok) {
       let errBody = null;
       try { errBody = await upstream.json(); } catch (_) {}
-      console.error('Anthropic API error:', upstream.status, errBody && errBody.error);
+      console.error('xAI API error:', upstream.status, errBody && (errBody.error || errBody));
       logEvent({
         ip, event: 'ai_generation_failed', brief, ref,
         duration_ms: Date.now() - startedAt,
@@ -161,7 +164,8 @@ export default async function handler(req, res) {
       });
       const status = upstream.status === 429 ? 429 : 502;
       return res.status(status).json({
-        error: (errBody && errBody.error && errBody.error.message) || 'The generation service returned an error.'
+        error: (errBody && errBody.error && (errBody.error.message || errBody.error))
+            || 'The generation service returned an error.'
       });
     }
 
@@ -183,6 +187,8 @@ export default async function handler(req, res) {
       if (done) break;
       sseBuf += decoder.decode(value, { stream: true });
 
+      // OpenAI-style SSE: events are `data: <json>` lines separated by
+      // blank lines, with a `data: [DONE]` terminator on completion.
       let evtEnd;
       while ((evtEnd = sseBuf.indexOf('\n\n')) >= 0) {
         const rawEvent = sseBuf.slice(0, evtEnd);
@@ -197,20 +203,26 @@ export default async function handler(req, res) {
         let parsed;
         try { parsed = JSON.parse(dataLine); } catch (_) { continue; }
 
-        if (parsed.type === 'content_block_delta'
-            && parsed.delta && parsed.delta.type === 'text_delta') {
-          const t = parsed.delta.text || '';
+        const choice = parsed.choices && parsed.choices[0];
+        if (choice && choice.delta && typeof choice.delta.content === 'string') {
+          const t = choice.delta.content;
           if (t) {
             accumulated += t;
             if (!clientGone) {
               try { res.write(t); } catch (_) { clientGone = true; }
             }
           }
-        } else if (parsed.type === 'message_delta' && parsed.delta) {
-          if (parsed.delta.stop_reason) stopReason = parsed.delta.stop_reason;
-          if (parsed.usage) usage = parsed.usage;
-        } else if (parsed.type === 'error' && parsed.error) {
-          console.error('Anthropic streaming error:', parsed.error);
+        }
+        if (choice && choice.finish_reason) {
+          stopReason = choice.finish_reason;
+        }
+        if (parsed.usage) {
+          // xAI emits usage on the final chunk. Normalize to the same shape
+          // _db.js expects (output_tokens / input_tokens).
+          usage = {
+            input_tokens: parsed.usage.prompt_tokens || 0,
+            output_tokens: parsed.usage.completion_tokens || 0
+          };
         }
       }
     }
