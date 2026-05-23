@@ -73,18 +73,34 @@ function decorate(html, slug, doc) {
   const pageTitle = (titleMatch && titleMatch[1].trim()) || 'A page made on AI Netscape';
   const safeTitle = escapeAttr(pageTitle.slice(0, 120));
 
+  // OG image = a live screenshot of THIS share URL via Microlink's
+  // screenshot proxy. Social crawlers (Twitter, iMessage, Slack, etc.)
+  // follow the link, get a PNG, cache it for ~7 days. First crawl
+  // takes 3-5s while Microlink generates fresh; subsequent shares
+  // hit their CDN cache. Anonymous free tier covers low traffic;
+  // swap to a registered API key (or self-host Playwright) if usage
+  // outgrows it.
+  const ogImageUrl = 'https://api.microlink.io/'
+    + '?url=' + encodeURIComponent(shareUrl)
+    + '&screenshot=true'
+    + '&meta=false'
+    + '&embed=screenshot.url'
+    + '&viewport.width=1200'
+    + '&viewport.height=630';
+  const safeImg = escapeAttr(ogImageUrl);
+
   const ogTags =
     '<meta property="og:type" content="website">' +
     '<meta property="og:url" content="' + escapeAttr(shareUrl) + '">' +
     '<meta property="og:title" content="' + safeTitle + '">' +
     '<meta property="og:description" content="Made with AI Netscape — a 1997 HTML editor with one anachronistic button.">' +
-    '<meta property="og:image" content="https://ainetscape.com/og-image.png">' +
+    '<meta property="og:image" content="' + safeImg + '">' +
     '<meta property="og:image:width" content="1200">' +
     '<meta property="og:image:height" content="630">' +
     '<meta name="twitter:card" content="summary_large_image">' +
     '<meta name="twitter:title" content="' + safeTitle + '">' +
     '<meta name="twitter:description" content="Made with AI Netscape.">' +
-    '<meta name="twitter:image" content="https://ainetscape.com/og-image.png">';
+    '<meta name="twitter:image" content="' + safeImg + '">';
 
   const badge =
     '<a href="https://ainetscape.com?ref=share" target="_blank" rel="noopener noreferrer" ' +
