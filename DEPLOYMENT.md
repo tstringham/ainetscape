@@ -41,10 +41,30 @@ Set on the **Production** scope:
 
 ### Rate limiting — Upstash Redis (recommended)
 
-Vercel dashboard → **Storage / Marketplace → Upstash → Redis**, attach it to
-the project. The integration injects `UPSTASH_REDIS_REST_URL` and
-`UPSTASH_REDIS_REST_TOKEN` automatically. If these are absent the proxy falls
-back to a weaker per-instance in-memory limiter.
+Two paths — both wire the same two env vars into Vercel.
+
+**A) Vercel Marketplace (easiest)** — Vercel dashboard → **Storage /
+Marketplace → Upstash → Redis**, attach it to the project. The integration
+injects `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` automatically.
+
+**B) Direct via Upstash console (manual)** — if you created the DB at
+`console.upstash.com/redis` directly:
+
+1. On the DB details page, scroll to **REST API** and copy:
+   - `UPSTASH_REDIS_REST_URL` (`https://xxxx-xxxxx.upstash.io`)
+   - `UPSTASH_REDIS_REST_TOKEN` (long opaque string)
+   - **Not** the `redis://` URL — the code uses the REST client.
+2. Vercel → Project → Settings → Environment Variables → add both, ticking
+   **Production**, **Preview**, and **Development** for each.
+3. Redeploy (`vercel --prod`) — Vercel only injects env vars at build time.
+
+**Recommended DB settings:** Primary Region `us-east-1` (matches Vercel's
+default `iad1` function region — keeps `INCR`/`EXPIRE` in single-digit ms),
+Eviction **OFF** (rate limit keys self-expire via `EXPIRE`; eviction could
+drop a live counter mid-window).
+
+If both env vars are absent, the proxy falls back to a weaker per-instance
+in-memory limiter — fine for local dev, not for production.
 
 ### Deploy to staging
 
