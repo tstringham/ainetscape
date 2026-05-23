@@ -551,31 +551,24 @@
     background: white;
   }
 
-  /* Share overlay — small magenta/cyan button on top-right of the iframe.
-     Same anachronistic palette as the AI Composer button to signal "this
-     is also future-from-1997 tech." Only appears when sharing is wired. */
-  .share-overlay {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 20;
-    padding: 5px 12px;
-    background: linear-gradient(180deg, #ff44ff 0%, #cc00ff 50%, #00ccff 100%);
-    color: #000;
-    font-family: "MS Sans Serif", "Microsoft Sans Serif", Tahoma, sans-serif;
-    font-size: 11px;
-    font-weight: bold;
-    letter-spacing: 0.02em;
+  /* Share toolbar button — anachronistic palette like AI Composer but
+     quieter (no pulse, no scale animation). Lives next to AI Composer
+     in the toolbar, hidden by default; toggled visible after a successful
+     generation when the server returned a share slug. */
+  .tbtn.share-btn {
+    background: linear-gradient(180deg, #00ccff 0%, #ff44ff 100%);
+    color: black;
     border: 2px solid;
     border-color: #ffff00 #ff00ff #ff00ff #ffff00;
-    box-shadow: 2px 2px 0 rgba(0,0,0,0.3);
-    cursor: pointer;
   }
-  .share-overlay:hover { border-color: #ffff00 #00ffff #00ffff #ffff00; }
-  .share-overlay:active {
-    border-color: #ff00ff #ffff00 #ffff00 #ff00ff;
-    box-shadow: 1px 1px 0 rgba(0,0,0,0.3);
+  .tbtn.share-btn .lbl {
+    font-weight: bold;
+    text-shadow: 1px 1px 0 #fff;
   }
+  .tbtn.share-btn:hover {
+    border-color: #ffff00 #00ffff #00ffff #ffff00;
+  }
+  .tbtn.share-btn[hidden] { display: none; }
 
   /* Source view textarea */
   #source-view {
@@ -1005,6 +998,19 @@
       </div>
       <div class="lbl">AI Composer</div>
     </div>
+
+    <!-- Share — only visible after a generation when sharing is wired -->
+    <div class="tbtn share-btn" id="share-btn" data-action="share" title="Share this page" hidden>
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <!-- Two chain links — period-correct "share" iconography -->
+          <path d="M8 7 a3 3 0 0 0 0 6 h2 v-1.5 h-2 a1.5 1.5 0 0 1 0 -3 h2 v-1.5 z" fill="white" stroke="black" stroke-width="0.8"/>
+          <path d="M14 15 a3 3 0 0 0 0 -6 h-2 v1.5 h2 a1.5 1.5 0 0 1 0 3 h-2 v1.5 z" fill="white" stroke="black" stroke-width="0.8"/>
+          <path d="M8.5 11 h5" stroke="black" stroke-width="1.2"/>
+        </svg>
+      </div>
+      <div class="lbl">Share</div>
+    </div>
   </div>
 
   <!-- Formatting toolbar -->
@@ -1314,23 +1320,19 @@ function renderGeneratedIntoIframe(html) {
   editor.innerHTML = '';
   editor.appendChild(iframe);
   editor.classList.add('has-iframe');
-
-  // Share button overlay — only rendered when the server returned a slug
-  // (i.e. sharing is wired and the page has a public URL).
-  if (currentShareSlug) {
-    const btn = document.createElement('button');
-    btn.className = 'share-overlay';
-    btn.type = 'button';
-    btn.innerHTML = '<span aria-hidden="true">🔗</span> Share';
-    btn.title = 'Share this page';
-    btn.addEventListener('click', openShareDialog);
-    editor.appendChild(btn);
-  }
+  updateShareButtonVisibility();
 }
 function exitIframeMode() {
   currentDocHTML = null;
   currentShareSlug = null;
   editor.classList.remove('has-iframe');
+  updateShareButtonVisibility();
+}
+function updateShareButtonVisibility() {
+  const btn = document.getElementById('share-btn');
+  if (!btn) return;
+  if (currentShareSlug) btn.removeAttribute('hidden');
+  else btn.setAttribute('hidden', '');
 }
 
 const reduceMotion = (function () {
@@ -1435,6 +1437,7 @@ document.getElementById('main-toolbar').addEventListener('click', e => {
     case 'table':   saveSelection(); openDialog('dlg-table'); break;
     case 'spell':   showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)'); break;
     case 'ai':      openDialog('dlg-ai'); { const p = document.getElementById('ai-prompt'); if (p) p.focus(); } break;
+    case 'share':   openShareDialog(); break;
   }
 });
 
