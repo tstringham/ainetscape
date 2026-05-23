@@ -177,8 +177,184 @@
     cursor: default;
     user-select: none;
   }
-  .menu-item:hover { background: var(--select); color: var(--select-fg); }
+  .menu-item:hover, .menu-item.active {
+    background: var(--select);
+    color: var(--select-fg);
+  }
   .menu-item .acc { text-decoration: underline; }
+
+  /* ---- Dropdown panel ---- */
+  .menu-dropdown {
+    position: fixed;
+    background: var(--face);
+    border: 1px solid black;
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.35);
+    padding: 2px;
+    min-width: 180px;
+    z-index: 950;
+    font-size: 11px;
+    font-family: "MS Sans Serif", "Microsoft Sans Serif", Tahoma, sans-serif;
+    user-select: none;
+  }
+  .menu-row {
+    display: flex;
+    align-items: center;
+    padding: 3px 22px 3px 22px;
+    cursor: default;
+    position: relative;
+    white-space: nowrap;
+  }
+  .menu-row .acc { text-decoration: underline; }
+  .menu-row .menu-shortcut {
+    margin-left: auto;
+    padding-left: 24px;
+    color: #333;
+  }
+  .menu-row.has-submenu::after {
+    content: '▶';
+    position: absolute;
+    right: 4px;
+    font-size: 9px;
+  }
+  .menu-row:hover, .menu-row.active {
+    background: var(--select);
+    color: var(--select-fg);
+  }
+  .menu-row:hover .menu-shortcut,
+  .menu-row.active .menu-shortcut { color: var(--select-fg); }
+  .menu-row.disabled {
+    color: #888;
+    pointer-events: none;
+  }
+  .menu-row.checked::before {
+    content: '✓';
+    position: absolute;
+    left: 6px;
+  }
+  .menu-separator {
+    height: 0;
+    border-top: 1px solid var(--sh);
+    border-bottom: 1px solid var(--hi);
+    margin: 3px 1px;
+  }
+
+  /* ---- Fade-to-void overlay (File → Exit) ---- */
+  .session-void {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    color: #c8c8c8;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: "MS Sans Serif", "Microsoft Sans Serif", Tahoma, sans-serif;
+    opacity: 0;
+    transition: opacity 1.4s ease-in;
+    pointer-events: none;
+  }
+  .session-void.on { opacity: 1; pointer-events: auto; }
+  .session-void .void-title {
+    font-size: 14px;
+    margin-bottom: 12px;
+    letter-spacing: 0.05em;
+  }
+  .session-void .void-sub {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 24px;
+  }
+  .session-void .void-btn {
+    background: var(--face);
+    color: #000;
+    border: 1px solid var(--sh-dk);
+    border-top-color: var(--hi);
+    border-left-color: var(--hi);
+    padding: 4px 16px;
+    font-size: 11px;
+    font-family: inherit;
+    cursor: default;
+  }
+  .session-void .void-btn:active {
+    border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk);
+  }
+
+  /* ---- JavaScript Console (Tools → Run JavaScript Console) ---- */
+  .js-console {
+    display: flex;
+    flex-direction: column;
+    font-family: "Courier New", "Lucida Console", monospace;
+    font-size: 12px;
+    background: white;
+    border: 1px solid var(--sh);
+    border-top-color: var(--sh-dk);
+    border-left-color: var(--sh-dk);
+    height: 280px;
+    width: 480px;
+    max-width: 90vw;
+  }
+  .js-console-out {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .js-console-out .js-prompt-line { color: #006400; }
+  .js-console-out .js-error       { color: #b00; }
+  .js-console-out .js-result      { color: #00008b; }
+  .js-console-input-row {
+    display: flex;
+    border-top: 1px solid var(--sh);
+    padding: 2px;
+    gap: 4px;
+    background: var(--face);
+  }
+  .js-console-input-row > .js-prompt { color: #006400; padding: 4px 2px 4px 4px; font-family: inherit; }
+  .js-console-input {
+    flex: 1;
+    border: 1px solid var(--sh-dk);
+    background: white;
+    padding: 3px 4px;
+    font-family: inherit;
+    font-size: 12px;
+  }
+
+  /* ---- Special-character picker ---- */
+  .specials-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+  }
+  .specials-grid button {
+    background: var(--face);
+    border: 1px solid var(--sh);
+    border-top-color: var(--hi);
+    border-left-color: var(--hi);
+    padding: 6px 0;
+    font-size: 14px;
+    cursor: default;
+    font-family: serif;
+  }
+  .specials-grid button:hover { background: var(--select); color: var(--select-fg); }
+  .specials-grid button:active {
+    border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk);
+  }
+
+  /* ---- Help Contents table of contents ---- */
+  .help-toc ul { list-style: none; padding-left: 16px; margin: 4px 0; }
+  .help-toc li { padding: 2px 0; }
+  .help-toc .chapter { font-weight: bold; padding-top: 6px; }
+  .help-toc a {
+    color: #0000c0;
+    text-decoration: underline;
+    cursor: default;
+  }
+
+  @media (max-width: 640px) {
+    .menubar { display: none; }
+  }
 
   /* ---- Toolbar (Composer toolbar) ---- */
   .toolbar {
@@ -593,15 +769,19 @@
   </div>
 
   <!-- Menu bar -->
-  <div class="menubar">
-    <div class="menu-item"><span class="acc">F</span>ile</div>
-    <div class="menu-item"><span class="acc">E</span>dit</div>
-    <div class="menu-item"><span class="acc">V</span>iew</div>
-    <div class="menu-item"><span class="acc">I</span>nsert</div>
-    <div class="menu-item">F<span class="acc">o</span>rmat</div>
-    <div class="menu-item"><span class="acc">T</span>ools</div>
-    <div class="menu-item"><span class="acc">C</span>ommunicator</div>
-    <div class="menu-item"><span class="acc">H</span>elp</div>
+  <div class="menubar" id="menubar">
+    <div class="menu-item" data-menu="File"><span class="acc">F</span>ile</div>
+    <div class="menu-item" data-menu="Edit"><span class="acc">E</span>dit</div>
+    <div class="menu-item" data-menu="View"><span class="acc">V</span>iew</div>
+    <div class="menu-item" data-menu="Insert"><span class="acc">I</span>nsert</div>
+    <div class="menu-item" data-menu="Format">F<span class="acc">o</span>rmat</div>
+    <div class="menu-item" data-menu="Tools"><span class="acc">T</span>ools</div>
+    <!-- TODO(v2): Communicator menu hidden for v1 launch. Bring back as a
+         feature drop when the Address Book + webring dialogs are ready.
+         Keep this code intact so re-enabling is a one-line uncomment.
+    <div class="menu-item" data-menu="Communicator"><span class="acc">C</span>ommunicator</div>
+    -->
+    <div class="menu-item" data-menu="Help"><span class="acc">H</span>elp</div>
   </div>
 
   <!-- Main toolbar -->
@@ -2178,20 +2358,681 @@ function maybeShowUpgradeHint() {
 }
 
 // ============================================================
-// F1 shows the About dialog
+// About dialog (F1 + Help → About AI Netscape)
 // ============================================================
+function showAboutDialog() {
+  showAlert('About AI Netscape',
+    'AI Netscape 4.7\n\n' +
+    '© 1997 AI Netscape\n' +
+    'All Rights Reserved.\n\n' +
+    'Now featuring one-click HTML one-page website generation powered by our proprietary ' +
+    'AI Composer™ engine. Best viewed at minimum 800x600 in 256 colors or better.\n\n' +
+    'For technical support, dial 1-800-AINETSCAPE.');
+}
 document.addEventListener('keydown', e => {
   if (e.key === 'F1') {
     e.preventDefault();
-    showAlert('About AI Netscape',
-      'AI Netscape 4.7\n\n' +
-      '© 1997 AI Netscape\n' +
-      'All Rights Reserved.\n\n' +
-      'Now featuring one-click HTML one-page website generation powered by our proprietary ' +
-      'AI Composer™ engine. Best viewed at minimum 800x600 in 256 colors or better.\n\n' +
-      'For technical support, dial 1-800-AINETSCAPE.');
+    showAboutDialog();
   }
 });
+
+// ============================================================
+// Menu bar — dropdowns, submenus, actions, in-character dialogs
+// ============================================================
+
+// Period-correct fonts available in Format → Font.
+const PERIOD_FONTS = [
+  'Times New Roman', 'Arial', 'Courier New', 'Verdana',
+  'Georgia', 'Comic Sans MS', 'Impact', 'Trebuchet MS'
+];
+
+// Special characters offered in Insert → Special Character.
+const SPECIAL_CHARACTERS = [
+  '©','®','™','§','¶','†','‡','•','°','±','×','÷','¬','¦',
+  '«','»','‹','›','“','”','‘','’','„','…','—','–','¡','¿',
+  '←','→','↑','↓','↔','↕','⇐','⇒','⇑','⇓',
+  '★','☆','♠','♣','♥','♦','♪','♫','☺','☻','☼','☂','☎','✉','✓','✗'
+];
+
+// 1997 Composer-era heading list.
+const HEADING_BLOCKS = [
+  { label: 'Heading 1', val: 'H1', acc: '1' },
+  { label: 'Heading 2', val: 'H2', acc: '2' },
+  { label: 'Heading 3', val: 'H3', acc: '3' },
+  { label: 'Heading 4', val: 'H4', acc: '4' },
+  { label: 'Heading 5', val: 'H5', acc: '5' },
+  { label: 'Heading 6', val: 'H6', acc: '6' },
+  { type: 'separator' },
+  { label: 'Normal',   val: 'P',  acc: 'N' }
+];
+
+// ---- Menu state ----
+let openMenuName = null;
+let openDropdown = null;
+let openSubmenu = null;
+
+function closeMenu() {
+  if (openDropdown) { openDropdown.remove(); openDropdown = null; }
+  if (openSubmenu)  { openSubmenu.remove();  openSubmenu  = null; }
+  if (openMenuName) {
+    const item = document.querySelector(`.menu-item[data-menu="${openMenuName}"]`);
+    if (item) item.classList.remove('active');
+    openMenuName = null;
+  }
+}
+
+function formatLabel(label, acc) {
+  if (!acc) return escapeHTML(label);
+  const idx = label.toLowerCase().indexOf(String(acc).toLowerCase());
+  if (idx < 0) return escapeHTML(label);
+  return escapeHTML(label.slice(0, idx)) +
+    '<span class="acc">' + escapeHTML(label[idx]) + '</span>' +
+    escapeHTML(label.slice(idx + 1));
+}
+
+function buildDropdown(items, left, top) {
+  const drop = document.createElement('div');
+  drop.className = 'menu-dropdown';
+  drop.style.left = left + 'px';
+  drop.style.top  = top + 'px';
+  items.forEach(item => {
+    if (item.type === 'separator') {
+      const s = document.createElement('div');
+      s.className = 'menu-separator';
+      drop.appendChild(s);
+      return;
+    }
+    const row = document.createElement('div');
+    row.className = 'menu-row';
+    if (item.disabled) row.classList.add('disabled');
+    if (item.checked) row.classList.add('checked');
+    if (item.type === 'submenu') row.classList.add('has-submenu');
+
+    const lbl = document.createElement('span');
+    lbl.innerHTML = formatLabel(item.label, item.acc);
+    row.appendChild(lbl);
+
+    if (item.shortcut) {
+      const sh = document.createElement('span');
+      sh.className = 'menu-shortcut';
+      sh.textContent = item.shortcut;
+      row.appendChild(sh);
+    }
+
+    if (item.type === 'submenu') {
+      row.addEventListener('mouseenter', () => openSubmenuFor(row, item.items));
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        openSubmenuFor(row, item.items);
+      });
+    } else if (!item.disabled && item.action) {
+      row.addEventListener('mouseenter', () => {
+        if (openSubmenu) { openSubmenu.remove(); openSubmenu = null; }
+      });
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        const fn = item.action;
+        closeMenu();
+        try { fn(); } catch (err) { console.error('Menu action failed:', err); }
+      });
+    }
+    drop.appendChild(row);
+  });
+  return drop;
+}
+
+function openSubmenuFor(rowEl, items) {
+  if (openSubmenu) { openSubmenu.remove(); openSubmenu = null; }
+  const r = rowEl.getBoundingClientRect();
+  const sub = buildDropdown(items, r.right - 2, r.top);
+  document.body.appendChild(sub);
+  // Nudge left if it would clip the viewport on the right.
+  const subRect = sub.getBoundingClientRect();
+  if (subRect.right > window.innerWidth - 4) {
+    const parentLeft = openDropdown ? openDropdown.getBoundingClientRect().left : r.left;
+    sub.style.left = Math.max(4, parentLeft - subRect.width + 2) + 'px';
+  }
+  openSubmenu = sub;
+}
+
+function openMenu(name) {
+  const config = MENUS[name];
+  if (!config) return;
+  if (openMenuName === name) { closeMenu(); return; }
+  closeMenu();
+  const anchor = document.querySelector(`.menu-item[data-menu="${name}"]`);
+  if (!anchor) return;
+  const rect = anchor.getBoundingClientRect();
+  const drop = buildDropdown(config, rect.left, rect.bottom);
+  document.body.appendChild(drop);
+  // Nudge left if dropdown would clip the right edge.
+  const dropRect = drop.getBoundingClientRect();
+  if (dropRect.right > window.innerWidth - 4) {
+    drop.style.left = Math.max(4, window.innerWidth - dropRect.width - 4) + 'px';
+  }
+  openDropdown = drop;
+  anchor.classList.add('active');
+  openMenuName = name;
+}
+
+// Bindings: top-level menu clicks + hover-swap.
+document.querySelectorAll('.menu-item[data-menu]').forEach(item => {
+  const name = item.dataset.menu;
+  item.addEventListener('click', e => {
+    e.stopPropagation();
+    openMenu(name);
+  });
+  item.addEventListener('mouseenter', () => {
+    if (openMenuName && openMenuName !== name) openMenu(name);
+  });
+});
+
+// Click outside / Escape closes.
+document.addEventListener('click', e => {
+  if (!openDropdown && !openSubmenu) return;
+  if (openDropdown && openDropdown.contains(e.target)) return;
+  if (openSubmenu && openSubmenu.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('.menu-item[data-menu]')) return;
+  closeMenu();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && (openDropdown || openSubmenu)) {
+    closeMenu();
+    e.stopPropagation();
+  }
+});
+
+// ============================================================
+// Menu action helpers (in-character dialogs + real actions)
+// ============================================================
+
+function recentPagesItems() {
+  // Recent Pages submenu — populated as docs are opened. None yet on a
+  // fresh install. Disabled placeholder keeps the surface honest.
+  let recent = [];
+  try { recent = JSON.parse(lsGet('recent-pages') || '[]'); } catch (_) {}
+  if (!recent.length) {
+    return [{ label: '(none yet)', disabled: true }];
+  }
+  return recent.slice(0, 8).map(name => ({
+    label: name,
+    action: () => showAlert('Open Recent', 'The file "' + name + '" could not be located on disk.\n\n(This computer doesn\'t have a hard disk yet.)')
+  }));
+}
+
+function sendPageDialog() {
+  showAlert('Send Page',
+    'Connecting to mail server smtp.ainetscape.com...\n\n' +
+    'The server is not responding. Your message has been queued.\n\n' +
+    'Outgoing mail will be retried every 4 hours until delivery succeeds, ' +
+    'or for 3 days, whichever comes first.');
+}
+
+function publishDialog() {
+  showAlert('Publish to Web',
+    'Connecting to FTP server ftp.ainetscape.com...\n\n' +
+    'Could not connect to publish target. The remote host actively refused the connection.\n\n' +
+    '(Please contact your Internet Service Provider for FTP account credentials.)');
+}
+
+function setPageTitleFlow() {
+  const cur = docTitle.textContent;
+  const next = prompt('Page Title:', cur);
+  if (next == null) return;
+  docTitle.textContent = next.slice(0, 80) || 'Untitled';
+  setStatus('Page title updated.');
+}
+
+function pageColorsDialog() {
+  // Period-correct: the "Page Colors and Properties" dialog let you set bg,
+  // text, link, visited, active link colors. We let two of those actually
+  // stick (background + text) via inline styles on the editor.
+  const cur = {
+    bg:   editor.style.background || '#ffffff',
+    fg:   editor.style.color      || '#000000',
+    link: '#0000ee',
+    vlink:'#551a8b'
+  };
+  const html = `
+    <table style="font-size:11px;">
+      <tr><td style="padding:3px 8px 3px 0;">Background:</td>
+          <td><input type="color" id="pc-bg" value="${cur.bg}"></td></tr>
+      <tr><td style="padding:3px 8px 3px 0;">Normal Text:</td>
+          <td><input type="color" id="pc-fg" value="${cur.fg}"></td></tr>
+      <tr><td style="padding:3px 8px 3px 0;">Unvisited Link:</td>
+          <td><input type="color" id="pc-link" value="${cur.link}" disabled></td></tr>
+      <tr><td style="padding:3px 8px 3px 0;">Visited Link:</td>
+          <td><input type="color" id="pc-vlink" value="${cur.vlink}" disabled></td></tr>
+    </table>
+    <div style="font-size:10px; color:#666; margin-top:8px;">
+      Link colors are inherited from your browser preferences.
+    </div>`;
+  openCustomDialog('Page Colors and Properties', html, [
+    { label: 'OK', primary: true, action: () => {
+      const bg = document.getElementById('pc-bg').value;
+      const fg = document.getElementById('pc-fg').value;
+      editor.style.background = bg;
+      editor.style.color = fg;
+      setStatus('Page properties updated.');
+    }},
+    { label: 'Cancel' }
+  ]);
+}
+
+function fadeToVoid() {
+  const overlay = document.createElement('div');
+  overlay.className = 'session-void';
+  overlay.innerHTML =
+    '<div class="void-title">Session ended.</div>' +
+    '<div class="void-sub">Connection closed by remote host.</div>' +
+    '<button class="void-btn" id="void-reload">Reconnect</button>';
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('on'));
+  try { stopModemAll(); } catch (_) {}
+  try { playDisconnect(false); } catch (_) {}
+  document.getElementById('void-reload').addEventListener('click', () => location.reload());
+}
+
+function openPreferencesDialog() {
+  const html = `
+    <div style="font-size:11px;">
+      <div style="border-bottom:1px solid #999; padding-bottom:4px; margin-bottom:8px; font-weight:bold;">Connection</div>
+      <label style="display:flex; align-items:center; gap:6px; padding:2px 0;">
+        <input type="checkbox" id="pref-modem" ${modemUpgraded ? 'checked' : ''}>
+        <span>Modem upgraded to 56k v.90 (2× faster handshake)</span>
+      </label>
+      <div style="border-bottom:1px solid #999; padding-bottom:4px; margin: 12px 0 8px; font-weight:bold;">Appearance</div>
+      <label style="display:flex; align-items:center; gap:6px; padding:2px 0; color:#888;">
+        <input type="checkbox" disabled>
+        <span>Show smart quotes</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; padding:2px 0; color:#888;">
+        <input type="checkbox" disabled checked>
+        <span>Underline links in editor</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; padding:2px 0; color:#888;">
+        <input type="checkbox" disabled>
+        <span>Enable animated GIFs</span>
+      </label>
+      <div style="font-size:10px; color:#666; margin-top:10px;">
+        Most preferences require a restart to take effect.
+      </div>
+    </div>`;
+  openCustomDialog('Preferences', html, [
+    { label: 'OK', primary: true, action: () => {
+      const checked = document.getElementById('pref-modem').checked;
+      if (checked !== modemUpgraded) {
+        // Mirror the upgrade button's behavior so state stays in sync.
+        upgradeBtn.click();
+      }
+    }},
+    { label: 'Cancel' }
+  ]);
+}
+
+function findInPage() {
+  const q = prompt('Find what:');
+  if (!q) return;
+  let found = false;
+  try { found = window.find && window.find(q); } catch (_) {}
+  if (!found) {
+    showAlert('Find', '"' + q + '" was not found in this document.');
+  }
+}
+
+function toggleBar(selector, label) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  const hidden = el.style.display === 'none';
+  el.style.display = hidden ? '' : 'none';
+  setStatus((hidden ? 'Showing ' : 'Hiding ') + label + '.');
+}
+
+function nudgeEditorFont(delta) {
+  const cur = parseInt(window.getComputedStyle(editor).fontSize, 10) || 14;
+  const next = Math.max(8, Math.min(28, cur + delta));
+  editor.style.fontSize = next + 'px';
+  setStatus('Text size: ' + next + 'px.');
+}
+
+function showPageInfo() {
+  const url = location.href;
+  const title = docTitle.textContent;
+  const bytes = new Blob([editor.innerHTML]).size;
+  showAlert('Page Info',
+    'Location:       ' + url + '\n' +
+    'Title:          ' + title + '\n' +
+    'Last Modified:  ' + new Date().toLocaleString() + '\n' +
+    'Content-Type:   text/html\n' +
+    'Character Set:  iso-8859-1\n' +
+    'Document Size:  ' + bytes.toLocaleString() + ' bytes');
+}
+
+function insertHTMLTag() {
+  const tag = prompt('Enter HTML tag (without angle brackets):', 'em');
+  if (!tag) return;
+  const safe = String(tag).replace(/[^a-zA-Z0-9]/g, '');
+  if (!safe) return;
+  exec('insertHTML', '<' + safe + '>' + (window.getSelection().toString() || 'text') + '</' + safe + '>');
+}
+
+function openSpecialCharDialog() {
+  saveSelection();
+  const grid = SPECIAL_CHARACTERS.map(ch =>
+    '<button data-ch="' + escapeAttr(ch) + '">' + escapeHTML(ch) + '</button>'
+  ).join('');
+  openCustomDialog('Special Character',
+    '<div style="font-size:11px; margin-bottom:6px;">Click a character to insert it at the cursor.</div>' +
+    '<div class="specials-grid">' + grid + '</div>',
+    [{ label: 'Close', primary: true }]);
+  // Wire after the dialog renders.
+  setTimeout(() => {
+    document.querySelectorAll('.specials-grid button').forEach(b => {
+      b.addEventListener('click', () => {
+        restoreSelection();
+        editor.focus();
+        exec('insertHTML', b.dataset.ch);
+      });
+    });
+  }, 0);
+}
+
+function insertBreak()     { exec('insertHTML', '<br>'); }
+function insertPageBreak() { exec('insertHTML', '<hr style="page-break-after:always" noshade>'); }
+function insertMarquee() {
+  const text = prompt('Marquee text:', 'Welcome to my home page!');
+  if (text == null) return;
+  exec('insertHTML',
+    '<marquee behavior="scroll" direction="left" scrollamount="6">' +
+    escapeHTML(text || 'Welcome to my home page!') +
+    '</marquee>');
+}
+
+function showWordCount() {
+  const txt = editor.innerText || '';
+  const words = (txt.trim().match(/\b\w+\b/g) || []).length;
+  const chars = txt.length;
+  const charsNoSpace = txt.replace(/\s+/g, '').length;
+  const lines = txt.split(/\r?\n/).length;
+  showAlert('Word Count',
+    'Words:                ' + words + '\n' +
+    'Characters (with spaces):    ' + chars + '\n' +
+    'Characters (no spaces):      ' + charsNoSpace + '\n' +
+    'Lines:                ' + lines);
+}
+
+function showDocInfo() {
+  const txt = editor.innerText || '';
+  const words = (txt.trim().match(/\b\w+\b/g) || []).length;
+  const bytes = new Blob([editor.innerHTML]).size;
+  const transferAt288 = (bytes * 8 / 28800).toFixed(1);
+  const transferAt56 = (bytes * 8 / 56000).toFixed(1);
+  showAlert('Document Information',
+    'Title:               ' + docTitle.textContent + '\n' +
+    'Words:               ' + words + '\n' +
+    'Document size:       ' + bytes.toLocaleString() + ' bytes\n' +
+    'Transfer time @ 28.8 kbps:  ' + transferAt288 + ' seconds\n' +
+    'Transfer time @ 56k v.90:   ' + transferAt56 + ' seconds\n' +
+    'Last saved:          (not yet saved)');
+}
+
+function javaAppletDialog() {
+  showAlert('Java Plug-in',
+    'Java(TM) Plug-in version 1.1 is not installed on this system.\n\n' +
+    'Would you like to download it now?\n\n' +
+    '(Estimated download time at 28.8 kbps: 47 minutes.)');
+}
+
+function openJsConsoleDialog() {
+  const html =
+    '<div class="js-console">' +
+      '<div class="js-console-out" id="js-out">' +
+        '<div>JavaScript Console — AI Netscape 4.7</div>' +
+        '<div>Type an expression and press Enter. Use Shift+Enter for a newline.</div>' +
+        '<div>&nbsp;</div>' +
+      '</div>' +
+      '<div class="js-console-input-row">' +
+        '<span class="js-prompt">&gt;</span>' +
+        '<input class="js-console-input" id="js-in" autocomplete="off" spellcheck="false">' +
+      '</div>' +
+    '</div>';
+  openCustomDialog('JavaScript Console', html, [{ label: 'Close', primary: true }]);
+  setTimeout(() => {
+    const out = document.getElementById('js-out');
+    const inp = document.getElementById('js-in');
+    if (!out || !inp) return;
+    inp.focus();
+    const append = (cls, text) => {
+      const line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = text;
+      out.appendChild(line);
+      out.scrollTop = out.scrollHeight;
+    };
+    inp.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' && !ev.shiftKey) {
+        ev.preventDefault();
+        const src = inp.value;
+        if (!src) return;
+        inp.value = '';
+        append('js-prompt-line', '> ' + src);
+        try {
+          // Run in window scope. (1, eval) yields the indirect-eval form
+          // which evaluates against globals, exposing the actual window.
+          const result = (1, eval)(src);
+          append('js-result', String(result === undefined ? 'undefined' : result));
+        } catch (err) {
+          append('js-error', String(err));
+        }
+      }
+    });
+  }, 0);
+}
+
+function helpContentsDialog() {
+  const toc = `
+    <div class="help-toc" style="font-size:11px;">
+      <div style="margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid #999;">
+        AI Netscape User Guide — Table of Contents
+      </div>
+      <ul>
+        <li class="chapter">1. Getting Started</li>
+        <ul>
+          <li><a>What is AI Netscape?</a></li>
+          <li><a>System Requirements</a></li>
+          <li><a>Installing AI Netscape</a></li>
+        </ul>
+        <li class="chapter">2. The Editor</li>
+        <ul>
+          <li><a>Creating a new page</a></li>
+          <li><a>Formatting text</a></li>
+          <li><a>Inserting images and links</a></li>
+          <li><a>Saving your page</a></li>
+        </ul>
+        <li class="chapter">3. AI Composer</li>
+        <ul>
+          <li><a>Writing a good brief</a></li>
+          <li><a>Understanding bandwidth limits</a></li>
+          <li><a>Working with the 56k upgrade</a></li>
+        </ul>
+        <li class="chapter">4. Publishing</li>
+        <ul>
+          <li><a>FTP setup</a></li>
+          <li><a>Adding your page to webrings</a></li>
+        </ul>
+        <li class="chapter">5. Troubleshooting</li>
+        <ul>
+          <li><a>The line dropped</a></li>
+          <li><a>Bandwidth exceeded</a></li>
+          <li><a>Modem won't dial</a></li>
+        </ul>
+      </ul>
+      <div style="margin-top:10px; padding-top:6px; border-top:1px solid #999; font-size:10px; color:#666;">
+        Help articles are read directly from the help server. Connection required.
+      </div>
+    </div>`;
+  openCustomDialog('Help Contents', toc, [{ label: 'Close', primary: true }]);
+  setTimeout(() => {
+    document.querySelectorAll('.help-toc a').forEach(a => {
+      a.addEventListener('click', () => {
+        showAlert('Help Article', 'Could not retrieve help article from server.\n\nPlease check your Internet connection and try again.');
+      });
+    });
+  }, 0);
+}
+
+// ============================================================
+// Ad-hoc dialog factory — for the menu-driven dialogs that didn't
+// warrant their own static markup. Reuses the .modal-backdrop /
+// .dialog / .dialog-footer styling so everything stays period-correct.
+// ============================================================
+function openCustomDialog(title, bodyHTML, buttons) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop open';
+  backdrop.innerHTML =
+    '<div class="dialog">' +
+      '<div class="titlebar">' +
+        '<span class="title">' + escapeHTML(title) + '</span>' +
+        '<div class="titlebar-btns"><button class="titlebar-btn" data-close-custom>✕</button></div>' +
+      '</div>' +
+      '<div class="dialog-body">' + bodyHTML + '</div>' +
+      '<div class="dialog-footer"></div>' +
+    '</div>';
+  const footer = backdrop.querySelector('.dialog-footer');
+  (buttons || []).forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'dlg-btn' + (b.primary ? ' default' : '');
+    btn.textContent = b.label;
+    btn.addEventListener('click', () => {
+      try { if (b.action) b.action(); } catch (err) { console.error(err); }
+      backdrop.remove();
+    });
+    footer.appendChild(btn);
+  });
+  backdrop.querySelector('[data-close-custom]').addEventListener('click', () => backdrop.remove());
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+  document.body.appendChild(backdrop);
+}
+
+// ============================================================
+// MENUS config — every item declares its action inline.
+// ============================================================
+const MENUS = {
+  File: [
+    { label: 'New',                            acc: 'N', shortcut: 'Ctrl+N', action: () => newDoc() },
+    { label: 'Open...',                        acc: 'O', shortcut: 'Ctrl+O', action: () => openDoc() },
+    { type: 'separator' },
+    { label: 'Save',                           acc: 'S', shortcut: 'Ctrl+S', action: () => saveDoc() },
+    { label: 'Save As...',                     acc: 'A',                     action: () => saveDoc() },
+    { label: 'Send Page',                      acc: 'e',                     action: () => sendPageDialog() },
+    { label: 'Publish',                        acc: 'b',                     action: () => publishDialog() },
+    { type: 'separator' },
+    { label: 'Page Title...',                  acc: 'T',                     action: () => setPageTitleFlow() },
+    { label: 'Page Colors and Properties...',  acc: 'C',                     action: () => pageColorsDialog() },
+    { type: 'separator' },
+    { type: 'submenu', label: 'Recent Pages',  acc: 'R', get items() { return recentPagesItems(); } },
+    { type: 'separator' },
+    { label: 'Exit',                           acc: 'x',                     action: () => fadeToVoid() }
+  ],
+  Edit: [
+    { label: 'Undo',         acc: 'U', shortcut: 'Ctrl+Z', action: () => exec('undo') },
+    { label: 'Redo',         acc: 'R', shortcut: 'Ctrl+Y', action: () => exec('redo') },
+    { type: 'separator' },
+    { label: 'Cut',          acc: 't', shortcut: 'Ctrl+X', action: () => exec('cut') },
+    { label: 'Copy',         acc: 'C', shortcut: 'Ctrl+C', action: () => exec('copy') },
+    { label: 'Paste',        acc: 'P', shortcut: 'Ctrl+V', action: () => exec('paste') },
+    { label: 'Select All',   acc: 'A', shortcut: 'Ctrl+A', action: () => { editor.focus(); exec('selectAll'); } },
+    { type: 'separator' },
+    { label: 'Find in Page...', acc: 'F', shortcut: 'Ctrl+F', action: () => findInPage() },
+    { type: 'separator' },
+    { label: 'Preferences...',  acc: 'e',                    action: () => openPreferencesDialog() }
+  ],
+  View: [
+    { label: 'Show Toolbar',     acc: 'T', action: () => toggleBar('#main-toolbar', 'toolbar') },
+    { label: 'Show Format Bar',  acc: 'F', action: () => toggleBar('.format-bar', 'format bar') },
+    { label: 'Show Status Bar',  acc: 'S', action: () => toggleBar('.statusbar',  'status bar') },
+    { type: 'separator' },
+    { label: 'Reload',          acc: 'R', shortcut: 'Ctrl+R', action: () => location.reload() },
+    { label: 'Page Source',     acc: 'o', shortcut: 'Ctrl+U', action: () => toggleSource() },
+    { label: 'Page Info',       acc: 'I',                     action: () => showPageInfo() },
+    { type: 'separator' },
+    { label: 'Increase Text Size', acc: 'n', shortcut: 'Ctrl++', action: () => nudgeEditorFont(+1) },
+    { label: 'Decrease Text Size', acc: 'c', shortcut: 'Ctrl+-', action: () => nudgeEditorFont(-1) }
+  ],
+  Insert: [
+    { label: 'Link...',     acc: 'L', shortcut: 'Ctrl+K', action: () => { saveSelection(); openDialog('dlg-link'); } },
+    { label: 'Anchor...',   acc: 'A',                     action: () => insertAnchor() },
+    { label: 'Image...',    acc: 'I',                     action: () => { saveSelection(); openDialog('dlg-image'); } },
+    { type: 'separator' },
+    { label: 'H. Line',     acc: 'H',                     action: () => exec('insertHorizontalRule') },
+    { label: 'Table...',    acc: 'T',                     action: () => { saveSelection(); openDialog('dlg-table'); } },
+    { type: 'separator' },
+    { label: 'HTML Tag...',        acc: 'M', action: () => insertHTMLTag() },
+    { label: 'Special Character...', acc: 'S', action: () => openSpecialCharDialog() },
+    { type: 'separator' },
+    { label: 'Break',       acc: 'B',                     action: () => insertBreak() },
+    { label: 'Page Break',  acc: 'P',                     action: () => insertPageBreak() },
+    { type: 'separator' },
+    { label: 'Marquee',     acc: 'e',                     action: () => insertMarquee() }
+  ],
+  Format: [
+    { type: 'submenu', label: 'Font',  acc: 'F',
+      items: PERIOD_FONTS.map(f => ({ label: f, action: () => exec('fontName', f) })) },
+    { type: 'submenu', label: 'Size',  acc: 'S',
+      items: [1,2,3,4,5,6,7].map(n => ({ label: 'Size ' + n, acc: String(n), action: () => exec('fontSize', String(n)) })) },
+    { label: 'Color...', acc: 'C',
+      action: () => {
+        const picker = document.getElementById('font-color');
+        if (picker) picker.click();
+      }
+    },
+    { type: 'separator' },
+    { label: 'Bold',          acc: 'B', shortcut: 'Ctrl+B', action: () => exec('bold') },
+    { label: 'Italic',        acc: 'I', shortcut: 'Ctrl+I', action: () => exec('italic') },
+    { label: 'Underline',     acc: 'U', shortcut: 'Ctrl+U', action: () => exec('underline') },
+    { label: 'Strikethrough', acc: 'S',                     action: () => exec('strikeThrough') },
+    { type: 'separator' },
+    { type: 'submenu', label: 'Heading', acc: 'H',
+      items: HEADING_BLOCKS.map(h => h.type === 'separator'
+        ? { type: 'separator' }
+        : { label: h.label, acc: h.acc, action: () => exec('formatBlock', h.val) }) },
+    { type: 'separator' },
+    { label: 'Align Left',    acc: 'L', action: () => exec('justifyLeft') },
+    { label: 'Align Center',  acc: 'e', action: () => exec('justifyCenter') },
+    { label: 'Align Right',   acc: 'R', action: () => exec('justifyRight') },
+    { type: 'separator' },
+    { label: 'Bulleted List', acc: 'l', action: () => exec('insertUnorderedList') },
+    { label: 'Numbered List', acc: 'N', action: () => exec('insertOrderedList') },
+    { type: 'separator' },
+    { label: 'Indent',  acc: 'n', action: () => exec('indent') },
+    { label: 'Outdent', acc: 'O', action: () => exec('outdent') }
+  ],
+  Tools: [
+    { label: 'Check Spelling...', acc: 'S', action: () => showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)') },
+    { label: 'AI Composer...',     acc: 'A', action: () => { openDialog('dlg-ai'); const p = document.getElementById('ai-prompt'); if (p) p.focus(); } },
+    { type: 'separator' },
+    { label: 'Word Count',         acc: 'W', action: () => showWordCount() },
+    { label: 'Document Information', acc: 'I', action: () => showDocInfo() },
+    { type: 'separator' },
+    { label: 'Run Java Applet...',          acc: 'J', action: () => javaAppletDialog() },
+    { label: 'Run JavaScript Console',      acc: 'C', action: () => openJsConsoleDialog() }
+  ],
+  Help: [
+    { label: 'Help Contents',         acc: 'C', shortcut: 'F1', action: () => helpContentsDialog() },
+    { type: 'separator' },
+    { label: 'Release Notes',         acc: 'R', action: () => showAlert('Release Notes', 'AI Netscape 4.7 — May 22, 2026\n\n• New: AI Composer engine.\n• New: 56k v.90 modem upgrade pathway.\n• Fixed: dialog font rendering on high-resolution displays (1024x768+).\n• Known issue: Java applets require version 1.1 plug-in (not yet bundled).') },
+    { label: 'What\'s New',           acc: 'N', action: () => showAlert('What\'s New', 'The AI Composer is here.\n\nDescribe what you want, and AI Netscape will assemble a complete HTML page using our proprietary engine. Best results at 56k v.90.') },
+    { type: 'separator' },
+    { label: 'Software Updates...',   acc: 'U', action: () => showAlert('Software Updates', 'Checking for updates...\n\nYou are running the most recent version of AI Netscape (4.7).\n\nNext scheduled check: 02/14/1998.') },
+    { label: 'Register Now...',       acc: 'R', action: () => showAlert('Register AI Netscape', 'Thank you for your interest in registering AI Netscape!\n\nPlease have your serial number ready and call 1-800-AINETSCAPE during business hours (9am-5pm PST).\n\nVisa, MasterCard, and personal cheques accepted.') },
+    { type: 'separator' },
+    { label: 'Send Feedback',         acc: 'F', action: () => { window.location.href = 'mailto:webmaster@ainetscape.com?subject=AI%20Netscape%20Feedback'; } },
+    { type: 'separator' },
+    { label: 'About AI Netscape',     acc: 'A', action: () => showAboutDialog() }
+  ]
+};
 
 // Initialize tag-path tracking
 editor.addEventListener('input', updateTagPath);
