@@ -102,12 +102,26 @@ function decorate(html, slug, doc) {
     '<meta name="twitter:description" content="Made with AI Netscape.">' +
     '<meta name="twitter:image" content="' + safeImg + '">';
 
-  // Bottom-right cluster: "Made with AI Netscape ✦" badge + the persistent
-  // legal-links row beneath it. Wrapped in a single fixed container so the
-  // two pieces stay locked together visually as a single attribution unit.
+  // Bottom-right cluster: optional Site-of-the-Week badge + "Made with
+  // AI Netscape ✦" badge + the persistent legal-links row beneath. All
+  // wrapped in one fixed container so the pieces stay locked together
+  // visually as a single attribution unit.
+  //
+  // The SOTW badge appears only when this row currently holds the
+  // site_of_the_week field — disappears automatically when next
+  // Monday's cron clears the flag, no template change needed.
+  const isSotw = !!(doc && doc.site_of_the_week);
+  const sotwBadge = isSotw
+    ? '<div style="margin-bottom:4px; font-size:10px; line-height:1.4; ' +
+      'background:rgba(255,255,255,0.92); padding:2px 8px; ' +
+      'border:1px solid #888; display:inline-block; color:#000080; ' +
+      'font-weight:bold; letter-spacing:0.03em;">' +
+      '★ Site of the Week</div>'
+    : '';
   const badge =
     '<div style="position:fixed; bottom:12px; right:12px; z-index:2147483647; ' +
     'text-align:right; font-family:\'MS Sans Serif\',Tahoma,sans-serif;">' +
+      sotwBadge +
       '<a href="https://ainetscape.com?ref=share" target="_blank" rel="noopener noreferrer" ' +
       'style="display:inline-block; padding:6px 12px; ' +
       'background:linear-gradient(180deg,#ff44ff 0%,#cc00ff 50%,#00ccff 100%); ' +
