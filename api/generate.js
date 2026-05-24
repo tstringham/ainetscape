@@ -62,6 +62,15 @@ OUTPUT FORMAT:
 - Single self-contained file: all CSS in <style>, all JS in <script>, no external libraries except Google Fonts via <link>.
 - Mobile-first responsive. Test mentally at 375px, 768px, 1440px.
 
+IMAGERY DIRECTIVE:
+Do NOT use placeholder image services such as picsum.photos, lorempixel.com, placeholder.com, via.placeholder.com, source.unsplash.com, or any similar service. These services return arbitrary or random images that will not match your content. Photographic imagery is not available to you in this environment.
+
+Instead, use CSS gradients, SVG illustrations, geometric shapes, decorative borders, numbered medallions, Unicode symbols, and strong typography to create all visual elements. A page with confident type and intentional geometric design is preferred over a page with mismatched photographs.
+
+If a brief specifically requests photos or imagery, interpret this as a request for visual interest and substitute CSS-generated alternatives that capture the same energy — color blocks tinted to subject themes, stylized silhouettes in SVG, abstract patterns, type-as-art compositions. Never fall back on stock photo placeholders.
+
+This is a hard constraint. Period-correct 1997 web design was overwhelmingly type-and-geometry; photographic imagery was the exception, not the rule. Lean into the constraint.
+
 DESIGN RULES (non-negotiable):
 - Commit to a strong aesthetic direction within the first paragraph of CSS. Options include: editorial magazine, refined Swiss minimalism, neo-brutalism, art-deco luxury, terminal/monospace, neo-grotesque maximalism, organic/painterly. Pick ONE and execute it with conviction.
 - Typography is the first impression. Pair a distinctive display face with a refined body face from Google Fonts. Never use Inter, Roboto, Arial, or system-ui as the primary face. Strong pairings: Fraunces + Inter Tight; Instrument Serif + a refined sans; Space Grotesk + IBM Plex Mono; PP Editorial-style serifs; Bricolage Grotesque.

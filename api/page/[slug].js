@@ -102,49 +102,56 @@ function decorate(html, slug, doc) {
     '<meta name="twitter:description" content="Made with AI Netscape.">' +
     '<meta name="twitter:image" content="' + safeImg + '">';
 
-  // Bottom-right cluster: optional Site-of-the-Week badge + "Made with
-  // AI Netscape ✦" badge + the persistent legal-links row beneath. All
-  // wrapped in one fixed container so the pieces stay locked together
-  // visually as a single attribution unit.
+  // Split bottom bar: legal-links row anchored bottom-left, "Made with AI
+  // Netscape ✦" badge anchored bottom-right. Two independent fixed elements
+  // so each can breathe at its own edge instead of stacking in one corner.
   //
-  // The SOTW badge appears only when this row currently holds the
-  // site_of_the_week field — disappears automatically when next
-  // Monday's cron clears the flag, no template change needed.
+  // The Site-of-the-Week badge — only present when this row currently
+  // holds the site_of_the_week field — sits as a third fixed element
+  // just above the bottom-right "Made with" badge. Disappears
+  // automatically when next Monday's cron clears the flag.
   const isSotw = !!(doc && doc.site_of_the_week);
   const sotwBadge = isSotw
-    ? '<div style="margin-bottom:4px; font-size:10px; line-height:1.4; ' +
+    ? '<div style="position:fixed; bottom:50px; right:12px; z-index:2147483647; ' +
+      'font:bold 10px \'MS Sans Serif\',Tahoma,sans-serif; ' +
       'background:rgba(255,255,255,0.92); padding:2px 8px; ' +
-      'border:1px solid #888; display:inline-block; color:#000080; ' +
-      'font-weight:bold; letter-spacing:0.03em;">' +
+      'border:1px solid #888; color:#000080; letter-spacing:0.03em;">' +
       '★ Site of the Week</div>'
     : '';
   const badge =
-    '<div style="position:fixed; bottom:12px; right:12px; z-index:2147483647; ' +
-    'text-align:right; font-family:\'MS Sans Serif\',Tahoma,sans-serif;">' +
-      sotwBadge +
-      '<a href="https://ainetscape.com?ref=share" target="_blank" rel="noopener noreferrer" ' +
-      'style="display:inline-block; padding:6px 12px; ' +
-      'background:linear-gradient(180deg,#ff44ff 0%,#cc00ff 50%,#00ccff 100%); ' +
-      'color:#000; font:bold 11px \'MS Sans Serif\',Tahoma,sans-serif; ' +
-      'text-decoration:none; border:2px solid; ' +
-      'border-color:#ffff00 #ff00ff #ff00ff #ffff00; ' +
-      'box-shadow:2px 2px 0 rgba(0,0,0,0.4); ' +
-      'letter-spacing:0.02em;">' +
-      'Made with AI Netscape ✦</a>' +
-      '<div style="margin-top:4px; font-size:10px; line-height:1.4; ' +
-      'background:rgba(255,255,255,0.85); padding:2px 8px; ' +
-      'border:1px solid #888; display:inline-block;">' +
-        '<a href="https://ainetscape.com/gallery"   style="color:#000080;text-decoration:underline;">Gallery</a>' +
-        '<span style="color:#666;margin:0 4px;">·</span>' +
-        '<a href="https://ainetscape.com/terms"     style="color:#000080;text-decoration:underline;">Terms</a>' +
-        '<span style="color:#666;margin:0 4px;">·</span>' +
-        '<a href="https://ainetscape.com/privacy"   style="color:#000080;text-decoration:underline;">Privacy</a>' +
-        '<span style="color:#666;margin:0 4px;">·</span>' +
-        '<a href="https://ainetscape.com/copyright" style="color:#000080;text-decoration:underline;">Copyright</a>' +
-        '<span style="color:#666;margin:0 4px;">·</span>' +
-        '<a href="https://ainetscape.com/faq"       style="color:#000080;text-decoration:underline;">FAQ</a>' +
-      '</div>' +
-    '</div>';
+    '<div style="position:fixed; bottom:12px; left:12px; z-index:2147483647; ' +
+    'font:10px \'MS Sans Serif\',Tahoma,sans-serif; line-height:1.5; ' +
+    'background:rgba(255,255,255,0.9); padding:4px 10px; ' +
+    'border:1px solid #888;">' +
+      '<a href="https://ainetscape.com/gallery"   style="color:#000080;text-decoration:underline;">Gallery</a>' +
+      '<span style="color:#666;margin:0 7px;">·</span>' +
+      '<a href="https://ainetscape.com/terms"     style="color:#000080;text-decoration:underline;">Terms</a>' +
+      '<span style="color:#666;margin:0 7px;">·</span>' +
+      '<a href="https://ainetscape.com/privacy"   style="color:#000080;text-decoration:underline;">Privacy</a>' +
+      '<span style="color:#666;margin:0 7px;">·</span>' +
+      '<a href="https://ainetscape.com/copyright" style="color:#000080;text-decoration:underline;">Copyright</a>' +
+      '<span style="color:#666;margin:0 7px;">·</span>' +
+      '<a href="https://ainetscape.com/faq"       style="color:#000080;text-decoration:underline;">FAQ</a>' +
+    '</div>' +
+    sotwBadge +
+    '<style>@keyframes aiNetscapeShimmer{' +
+      '0%{background-position:0% 0%}' +
+      '100%{background-position:0% 100%}' +
+    '}@media (prefers-reduced-motion:reduce){' +
+      '.ai-netscape-badge{animation:none!important}' +
+    '}</style>' +
+    '<a class="ai-netscape-badge" href="https://ainetscape.com?ref=share" target="_blank" rel="noopener noreferrer" ' +
+    'style="position:fixed; bottom:12px; right:12px; z-index:2147483647; ' +
+    'display:inline-block; padding:6px 12px; ' +
+    'background:linear-gradient(180deg,#ff44ff 0%,#cc00ff 50%,#00ccff 100%); ' +
+    'background-size:100% 220%; ' +
+    'animation:aiNetscapeShimmer 7s ease-in-out infinite alternate; ' +
+    'color:#000; font:bold 11px \'MS Sans Serif\',Tahoma,sans-serif; ' +
+    'text-decoration:none; border:2px solid; ' +
+    'border-color:#ffff00 #ff00ff #ff00ff #ffff00; ' +
+    'box-shadow:2px 2px 0 rgba(0,0,0,0.4); ' +
+    'letter-spacing:0.02em;">' +
+    'Made with AI Netscape ✦</a>';
 
   let out = html;
   if (/<\/head>/i.test(out)) {
