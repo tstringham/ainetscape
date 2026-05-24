@@ -10,7 +10,7 @@
 // Gracefully 503s if MONGODB_URI isn't configured yet so a half-deployed
 // state surfaces a useful message instead of a stack trace.
 
-import { getCallerIp, rateLimit } from '../_shared.js';
+import { getCallerIp, rateLimit } from '../../_shared.js';
 
 const VALID_SLUG = /^[A-Za-z0-9]{6,20}$/;
 
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { findBySlug } = await import('../_db.js');
+    const { findBySlug } = await import('../../_db.js');
     const doc = await findBySlug(slug);
     if (!doc || !doc.body_html) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
