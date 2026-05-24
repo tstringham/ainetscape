@@ -1,22 +1,38 @@
 // /api/generate.js
 //
-// Single AI Composer endpoint. The pre-classifier (Haiku triage) was
-// removed — it was too aggressive on legitimate creative briefs. Every
-// submission now goes straight to Sonnet, which has substantially better
-// contextual judgment and only refuses in narrow clear-harm cases.
+// Single AI Composer endpoint. Every submission goes straight to the
+// active provider's model — no pre-classifier — and the model's own
+// contextual judgment handles refusals via a single-line response
+// `REFUSED::reason` that the client detects on the first chunk (fails
+// fast in ~1s instead of burning a full generation cycle).
 //
-// The refusal path is a single-line response: `REFUSED::reason`. The
-// client detects this on the first chunk and fails fast (~1s) instead of
-// burning a full generation cycle.
+// ============================================================
+// Multi-provider AI waterfall — priority order
+// ============================================================
+// Canonical register of providers. Add, remove, or re-order here and
+// mirror any change in `/memory/project_ai_waterfall.md`. The MODEL
+// constant below must match the PRIMARY entry.
+//
+//   1. PRIMARY    xAI Grok 4               — faster, lower cost,
+//                                             generous quota
+//   2. FALLBACK   Anthropic Claude Sonnet  — strongest design taste,
+//                                             reliable refusals
+//
+//   FUTURE CANDIDATES (under evaluation, not yet wired):
+//     - Google Gemini
+//     - OpenAI
+//
+// Fallback triggers: timeouts, REFUSED responses, malformed output,
+// rate-limit / quota exhaustion. Provider names live here and in
+// engineering docs — never in user-facing chrome.
+// ============================================================
 
 import {
   getCallerIp, parseBody, rateLimit, rateLimitMessage,
   makeCache, logEvent, makeShareSlug
 } from './_shared.js';
 
-// xAI experiment. Provider/model both swapped in one place. The Anthropic
-// branch is preserved in git history (last commit before this one) for
-// easy revert if Grok output quality doesn't hold up.
+// Must match the PRIMARY provider in the waterfall table above.
 const MODEL                    = 'grok-4';
 const MAX_TOKENS               = 8000;
 const MIN_BRIEF_LENGTH         = 3;
