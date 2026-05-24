@@ -557,7 +557,13 @@
      in the toolbar, hidden by default; toggled visible after a successful
      generation when the server returned a share slug. */
   .tbtn.share-btn {
-    background: linear-gradient(180deg, #00ccff 0%, #ff44ff 100%);
+    background:
+      linear-gradient(180deg,
+        #ff44ff 0%,
+        #ff00cc 32%,
+        #cc00ff 50%,
+        #00ccff 68%,
+        #22ffff 100%);
     color: black;
     border: 2px solid;
     border-color: #ffff00 #ff00ff #ff00ff #ffff00;
@@ -872,7 +878,7 @@
     <div class="menu-item" data-menu="Communicator"><span class="acc">C</span>ommunicator</div>
     -->
     <div class="menu-item" data-menu="Help"><span class="acc">H</span>elp</div>
-    <a class="menu-item" href="/gallery" style="text-decoration:none;color:inherit;"><span class="acc">G</span>allery</a>
+    <a class="menu-item" href="/gallery" style="text-decoration:none;color:inherit;">Top <span class="acc">S</span>ites</a>
   </div>
 
   <!-- Main toolbar -->
@@ -2127,21 +2133,37 @@ document.querySelectorAll('[data-close-ai]').forEach(el =>
 // brief seed from the dead URL's slug and links them back to /?compose=...
 // On arrival here, decode the brief, open the AI Composer dialog, pre-fill
 // the textarea, and focus it so the user can review/edit before generating.
+//
+// ---- ?ai=1 intake from the Gallery / legal / 404 (no-seed) flow ----
+// Toolbar AI Composer buttons on non-editor surfaces link to /?ai=1 so
+// landing here opens an empty dialog ready for input. ?compose= takes
+// precedence (it carries an actual seed); ?ai=1 only fires when there
+// is no compose seed.
 (function () {
   try {
-    const compose = new URLSearchParams(window.location.search).get('compose');
-    if (!compose || compose.length === 0 || compose.length > 500) return;
-    setTimeout(() => {
-      const promptEl = document.getElementById('ai-prompt');
-      if (!promptEl) return;
-      promptEl.value = compose;
-      openDialog('dlg-ai');
-      promptEl.focus();
-      // Cursor to end so editing feels natural.
-      try { promptEl.setSelectionRange(promptEl.value.length, promptEl.value.length); }
-      catch (_) {}
-      trackEvent('compose_from_404', { brief_length: compose.length });
-    }, 200);
+    const params  = new URLSearchParams(window.location.search);
+    const compose = params.get('compose');
+    if (compose && compose.length > 0 && compose.length <= 500) {
+      setTimeout(() => {
+        const promptEl = document.getElementById('ai-prompt');
+        if (!promptEl) return;
+        promptEl.value = compose;
+        openDialog('dlg-ai');
+        promptEl.focus();
+        try { promptEl.setSelectionRange(promptEl.value.length, promptEl.value.length); }
+        catch (_) {}
+        trackEvent('compose_from_404', { brief_length: compose.length });
+      }, 200);
+      return;
+    }
+    if (params.get('ai') === '1') {
+      setTimeout(() => {
+        const promptEl = document.getElementById('ai-prompt');
+        openDialog('dlg-ai');
+        if (promptEl) promptEl.focus();
+        trackEvent('ai_dialog_opened_from_param');
+      }, 200);
+    }
   } catch (_) {}
 })();
 
@@ -2261,7 +2283,11 @@ function trackEvent(name, params) {
 // until the 5-minute hard timeout fires.
 const REFUSED_PREFIX = 'REFUSED::';
 const HARD_TIMEOUT_MS = 5 * 60 * 1000;   // 5 minutes
-const STREAM_SILENCE_MS = 30 * 1000;     // 30s safety net for dead streams
+// Server buffers the upstream model output, runs Unsplash substitution,
+// then writes the whole response in one shot — so the client legitimately
+// sees no chunks for the duration of (model gen + image lookups). 90s
+// covers a complex generation + parallel Unsplash calls with margin.
+const STREAM_SILENCE_MS = 90 * 1000;
 
 async function generateWithAI(opts) {
   opts = opts || {};
