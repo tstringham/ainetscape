@@ -37,6 +37,12 @@ async function getDb() {
       { source: 1, event: 1, is_public: 1, upvotes: -1, ts: -1 },
       { name: 'gallery_upvotes_idx' }
     );
+    // Site-of-the-week lookup hits this every gallery render. Sparse so
+    // it only indexes the (typically 0 or 1) currently-set rows.
+    await db.collection('generations').createIndex(
+      { site_of_the_week: 1 },
+      { sparse: true, name: 'site_of_the_week_idx' }
+    );
   } catch (_) { /* index may already exist; ignore */ }
   return db;
 }
@@ -149,6 +155,82 @@ export async function completePageRow({
   await d.collection('generations').updateOne(
     { share_slug: String(share_slug) },
     { $set: setFields }
+  );
+}
+
+// ============================================================
+// Site of the Week — weekly cron picks one winning page based on
+// last-7-days upvote counts, sets site_of_the_week to the pick time,
+// and clears the field from any previously-winning row. The gallery
+// renders a feature box at the top for whichever row currently holds
+// the field; /p/[slug] adds a small badge to the winning page.
+// ============================================================
+
+// Top upvotes among public AI pages from the last 7 days that aren't
+// flagged. Ties broken by ts desc (most recent among tied vote counts).
+// Returns null when no candidate qualifies (zero-vote weeks, fresh
+// install) — the cron treats that as "no winner this week" and skips
+// the mark step entirely, which is the spec'd empty-state behavior.
+export async function findSiteOfTheWeekCandidate() {
+  const d = await getDb();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  return d.collection('generations').findOne(
+    {
+      source: 'ai',
+      event: 'ai_generation_completed',
+      is_public: { $ne: false },
+      flagged: { $ne: true },
+      ts: { $gte: sevenDaysAgo },
+      page_title: { $exists: true, $nin: [null, ''] },
+      body_html:  { $exists: true, $nin: [null, ''] },
+      upvotes: { $gt: 0 }
+    },
+    {
+      sort: { upvotes: -1, ts: -1 },
+      projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, _id: 0 }
+    }
+  );
+}
+
+// Unset on every currently-set row. Returns the number cleared so the
+// cron can log the transition (usually 0 or 1, but updateMany is the
+// safe form in case more than one row ever ends up flagged).
+export async function clearAllSiteOfTheWeek() {
+  const d = await getDb();
+  const result = await d.collection('generations').updateMany(
+    { site_of_the_week: { $exists: true, $ne: null } },
+    { $set: { site_of_the_week: null } }
+  );
+  return result.modifiedCount || 0;
+}
+
+export async function markSiteOfTheWeek(slug) {
+  if (!slug) return false;
+  const d = await getDb();
+  const r = await d.collection('generations').updateOne(
+    { share_slug: String(slug) },
+    { $set: { site_of_the_week: new Date() } }
+  );
+  return (r.modifiedCount || 0) > 0;
+}
+
+// One winner at a time; the gallery and the /p/[slug] badge both call
+// this. Filtered the same way as the gallery feed so a row that's been
+// hidden after winning doesn't keep showing as the featured page.
+export async function findCurrentSiteOfTheWeek() {
+  const d = await getDb();
+  return d.collection('generations').findOne(
+    {
+      site_of_the_week: { $exists: true, $ne: null },
+      source: 'ai',
+      is_public: { $ne: false }
+    },
+    {
+      projection: {
+        share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1,
+        site_of_the_week: 1, _id: 0
+      }
+    }
   );
 }
 

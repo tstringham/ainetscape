@@ -50,16 +50,21 @@ export default async function handler(req, res) {
   page = Math.min(page, 10000);     // sanity cap
 
   try {
-    const { findGalleryPages, countGalleryPages } = await import('./_db.js');
-    const [pages, total] = await Promise.all([
+    const {
+      findGalleryPages, countGalleryPages, findCurrentSiteOfTheWeek
+    } = await import('./_db.js');
+    const [pages, total, sotw] = await Promise.all([
       findGalleryPages({ sort, skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
-      countGalleryPages()
+      countGalleryPages(),
+      // Only show the feature box on page 1 of either sort — flipping
+      // through page 5 of an old archive shouldn't keep restating it.
+      page === 1 ? findCurrentSiteOfTheWeek() : Promise.resolve(null)
     ]);
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
     const html = renderChrome({
       title: 'AI Composer Gallery — AI Netscape',
-      content: renderGalleryContent({ pages, page, totalPages, sort, total }),
+      content: renderGalleryContent({ pages, page, totalPages, sort, total, sotw }),
       statusText: 'Document: AI Composer Gallery'
     });
 
@@ -77,7 +82,7 @@ export default async function handler(req, res) {
 // ============================================================
 // Gallery content (grid + sort toggle + pagination)
 // ============================================================
-function renderGalleryContent({ pages, page, totalPages, sort, total }) {
+function renderGalleryContent({ pages, page, totalPages, sort, total, sotw }) {
   // Quiet, period-correct heading: Times Roman ~h2, single deep blue,
   // matching the rest of the chrome's register rather than Geocities
   // rainbow. No heavy rule below — the subtitle separates it from the
@@ -85,6 +90,11 @@ function renderGalleryContent({ pages, page, totalPages, sort, total }) {
   const intro =
     '<h2 class="gallery-h">AI Composer Gallery</h2>' +
     '<p class="gallery-sub">A directory of recently composed pages.</p>';
+
+  // Site of the Week feature box sits above the sort toggle, only when
+  // a winner exists. Empty state is "render nothing" per spec — no
+  // placeholder, no "last week's winner" fallback.
+  const sotwBox = sotw ? renderSiteOfTheWeek(sotw) : '';
 
   const sortToggle =
     '<div class="gallery-toolbar">' +
@@ -102,7 +112,35 @@ function renderGalleryContent({ pages, page, totalPages, sort, total }) {
 
   const pagination = total === 0 ? '' : renderPagination({ page, totalPages, sort });
 
-  return intro + sortToggle + grid + pagination;
+  return intro + sotwBox + sortToggle + grid + pagination;
+}
+
+function renderSiteOfTheWeek(p) {
+  const slug = String(p.share_slug || '');
+  const title = String(p.page_title || 'Untitled');
+  const upvotes = formatCount(p.upvotes);
+  const hits = formatCount(p.hits);
+  const date = formatGalleryDate(p.ts);
+  const href = '/p/' + slug;
+  const thumb = microlinkThumbnailUrl(slug);
+
+  return '<div class="sotw-box">' +
+    '<div class="sotw-header">&#9733; SITE OF THE WEEK</div>' +
+    '<div class="sotw-body">' +
+      '<a class="sotw-thumb" href="' + escapeAttr(href) + '" tabindex="-1" aria-hidden="true">' +
+        '<img src="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' +
+      '</a>' +
+      '<div class="sotw-info">' +
+        '<a class="sotw-title" href="' + escapeAttr(href) + '" title="' + escapeAttr(title) + '">' +
+          escapeHtml(title) +
+        '</a>' +
+        '<div class="sotw-meta">Upvotes: ' + escapeHtml(upvotes) +
+          ' &middot; Hits: ' + escapeHtml(hits) + '</div>' +
+        '<div class="sotw-date">' + escapeHtml(date) + '</div>' +
+        '<a class="sotw-cta" href="' + escapeAttr(href) + '">View page &rarr;</a>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
 }
 
 function renderSortLink(label, value, currentSort) {
@@ -379,6 +417,71 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
     font-family: "Times New Roman", Times, serif;
     font-style: italic; font-size: 12pt; color: #333;
     margin: 0 0 14px;
+  }
+  /* ---- Site of the Week feature box ---- */
+  .sotw-box {
+    background: #f4f2ea;
+    border: 1px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    margin: 0 0 18px;
+    padding: 10px 14px 14px;
+    font-family: "MS Sans Serif", "Geneva", Tahoma, sans-serif;
+  }
+  .sotw-header {
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+    font-weight: bold; font-size: 13px;
+    letter-spacing: 0.05em;
+    color: #000080;
+    margin: 0 0 10px;
+    border-bottom: 1px solid #c8c4b4;
+    padding-bottom: 6px;
+  }
+  .sotw-body {
+    display: flex; gap: 16px; align-items: flex-start;
+  }
+  .sotw-thumb {
+    flex: 0 0 280px;
+    display: block;
+    aspect-ratio: 3 / 2;
+    background: #ddd;
+    border: 1px solid var(--sh);
+    overflow: hidden;
+  }
+  .sotw-thumb img {
+    width: 100%; height: 100%;
+    object-fit: cover; object-position: top center;
+    display: block;
+  }
+  .sotw-info { flex: 1; min-width: 0; }
+  .sotw-title {
+    font-family: "Times New Roman", Times, serif;
+    font-weight: bold; font-size: 18pt;
+    color: #000080;
+    text-decoration: underline;
+    line-height: 1.15;
+    display: block;
+    margin: 0 0 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sotw-title:hover { color: #cc00cc; }
+  .sotw-meta { font-size: 11px; color: #333; margin: 0 0 3px; }
+  .sotw-date { font-size: 11px; color: #555; font-style: italic; margin: 0 0 12px; }
+  .sotw-cta {
+    display: inline-block;
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+    font-size: 11px; color: #000;
+    background: var(--face);
+    border: 2px solid; border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    padding: 3px 12px 4px;
+    text-decoration: none;
+  }
+  .sotw-cta:hover { background: var(--face-lt); }
+  .sotw-cta:active { border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk); }
+  @media (max-width: 639px) {
+    .sotw-body { flex-direction: column; }
+    .sotw-thumb { flex: none; width: 100%; }
+    .sotw-title { font-size: 16pt; }
   }
   .gallery-toolbar {
     display: flex; justify-content: space-between; align-items: center;

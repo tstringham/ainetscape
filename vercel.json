@@ -49,10 +49,16 @@
     },
     "api/vote.js": {
       "maxDuration": 10
+    },
+    "api/cron/site-of-the-week.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
     { "source": "/p/:slug", "destination": "/api/page/:slug" },
     { "source": "/gallery", "destination": "/api/gallery" }
+  ],
+  "crons": [
+    { "path": "/api/cron/site-of-the-week", "schedule": "0 0 * * 1" }
   ]
 }
