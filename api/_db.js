@@ -38,6 +38,75 @@ export async function findBySlug(slug) {
   return d.collection('generations').findOne({ share_slug: slug });
 }
 
+// ============================================================
+// Two-stage write helpers — fix for the recurring /p/:slug 404.
+// ============================================================
+// insertPagePlaceholder writes a minimal row at request start with the
+// share_slug already populated. The /api/generate handler only sets the
+// X-AINetscape-Share-Slug response header if THIS call succeeds, so a
+// dead Mongo never produces a dead share link the client thinks is live.
+//
+// completePageRow updates that same row at stream end with body_html,
+// page_title, the final event type, and the rest of the analytics fields.
+// If THIS call fails, the row stays in 'ai_generation_pending' with
+// no body, and /api/page/[slug] serves the in-character 404 page
+// (its existing `if (!doc.body_html) → 404` check covers this).
+// ============================================================
+
+export async function insertPagePlaceholder({
+  ip, share_slug, author_token_hash, brief, ref, referrer, user_agent
+}) {
+  const d = await getDb();
+  const doc = {
+    ts: new Date(),
+    event: 'ai_generation_pending',     // upgraded by completePageRow
+    kind: 'generate',
+    ip_hash: hashIp(ip),
+    share_slug: String(share_slug),
+    author_token_hash: author_token_hash || null,
+    source: 'ai',
+    is_public: true,
+    upvotes: 0,
+    hits: 0,
+    // Briefs stored eagerly so abuse review works even when the body
+    // never arrives (placeholder-then-disconnect case).
+    brief_length: brief ? brief.length : 0,
+    brief_preview: brief ? brief.slice(0, 100) : '',
+    brief_full: brief ? String(brief) : null,
+    referrer: referrer ? String(referrer).slice(0, 200) : null,
+    utm_ref: ref ? String(ref).slice(0, 40) : null,
+    user_agent: user_agent ? String(user_agent).slice(0, 200) : null
+  };
+  await d.collection('generations').insertOne(doc);
+}
+
+export async function completePageRow({
+  share_slug, event, body_html, page_title, data, duration_ms, verdict
+}) {
+  if (!share_slug) throw new Error('completePageRow requires share_slug');
+  const d = await getDb();
+  const setFields = {
+    event: event || 'ai_generation_completed',
+    completed_at: new Date()
+  };
+  if (body_html) {
+    setFields.body_html = String(body_html);
+    setFields.body_size_bytes = setFields.body_html.length;
+  }
+  if (page_title) setFields.page_title = String(page_title).slice(0, 200);
+  if (data && data.model) setFields.model = data.model;
+  if (data && data.usage) {
+    setFields.input_tokens = data.usage.input_tokens || 0;
+    setFields.output_tokens = data.usage.output_tokens || 0;
+  }
+  if (typeof duration_ms === 'number') setFields.duration_ms = duration_ms;
+  if (verdict) setFields.verdict = String(verdict).slice(0, 200);
+  await d.collection('generations').updateOne(
+    { share_slug: String(share_slug) },
+    { $set: setFields }
+  );
+}
+
 function hashIp(ip) {
   return crypto.createHash('sha256').update(IP_SALT + String(ip)).digest('hex').slice(0, 16);
 }

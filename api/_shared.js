@@ -189,45 +189,69 @@ export function makeCache({ ttlMs = 10 * 60 * 1000, maxEntries = 200 } = {}) {
 }
 
 // ============================================================
-// Anonymized logging. Retries once on transient Mongo failure (Atlas
-// cold connections, brief network blips, queued pool waits) and throws
-// on final failure — callers MUST wrap in try/catch so a logger crash
-// can't take down a streaming response. Loud console.error on every
-// attempt so Vercel function logs surface the root cause.
+// Mongo write helpers with retry-once + throw semantics.
 //
-// Known structural limitation: the share-slug response header is sent
-// BEFORE the post-stream logEvent fires, so even with retries a hard
-// Mongo outage will still produce dead /p/:slug links. The real fix is
-// a two-stage write (placeholder at request start, completion update
-// at stream end) — deferred.
+// All three (logEvent, insertPagePlaceholder, completePageRow) share the
+// same retry harness: one immediate attempt → 250ms backoff → one more
+// attempt → throw on final failure with full stack already in Vercel
+// logs. Callers MUST wrap awaits in try/catch so a Mongo blip can't
+// take down a streaming response.
+//
+// Two-stage write architecture (insertPagePlaceholder + completePageRow)
+// fixes the recurring /p/:slug 404: the share-slug response header is
+// only emitted when the placeholder write succeeds, so a dead Mongo
+// never produces a dead share link the client thinks is live.
 // ============================================================
-export async function logEvent(event) {
+
+async function withRetry(label, ctx, fn) {
   if (!process.env.MONGODB_URI) return;
   let lastErr = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const { logEvent: _logEvent } = await import('./_db.js');
-      await _logEvent(event);
+      await fn();
       if (attempt > 1) {
-        console.log('logEvent recovered on retry attempt', attempt,
-          'for event', event && event.event);
+        console.log(label, 'recovered on retry attempt', attempt,
+          ctx ? ('— ' + ctx) : '');
       }
       return;
     } catch (err) {
       lastErr = err;
-      console.error('logEvent attempt', attempt, 'failed for event',
-        event && event.event, '— share_slug:', event && event.share_slug,
+      console.error(label, 'attempt', attempt, 'failed',
+        ctx ? ('— ' + ctx) : '',
         '— err:', err && (err.stack || err.message || err));
-      if (attempt === 1) {
-        await new Promise(r => setTimeout(r, 250));
-      }
+      if (attempt === 1) await new Promise(r => setTimeout(r, 250));
     }
   }
-  // Both attempts failed. Re-throw with a marker so callers know it was
-  // the persistent-storage layer that gave up, not their own code.
-  const e = new Error('logEvent failed after retries: ' +
+  const e = new Error(label + ' failed after retries: ' +
     (lastErr && (lastErr.message || lastErr)));
-  e.code = 'LOGEVENT_FAILED';
+  e.code = 'MONGO_WRITE_FAILED';
   e.cause = lastErr;
   throw e;
+}
+
+export async function logEvent(event) {
+  return withRetry('logEvent',
+    'event=' + (event && event.event) + ' slug=' + (event && event.share_slug),
+    async () => {
+      const { logEvent: _logEvent } = await import('./_db.js');
+      await _logEvent(event);
+    });
+}
+
+export async function insertPagePlaceholder(payload) {
+  return withRetry('insertPagePlaceholder',
+    'slug=' + (payload && payload.share_slug),
+    async () => {
+      const { insertPagePlaceholder: _insert } = await import('./_db.js');
+      await _insert(payload);
+    });
+}
+
+export async function completePageRow(payload) {
+  return withRetry('completePageRow',
+    'slug=' + (payload && payload.share_slug) + ' event=' + (payload && payload.event),
+    async () => {
+      const { completePageRow: _update } = await import('./_db.js');
+      await _update(payload);
+    });
 }

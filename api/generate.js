@@ -30,7 +30,8 @@
 import {
   getCallerIp, parseBody, rateLimit, rateLimitMessage,
   makeCache, logEvent, makeShareSlug,
-  makeAuthorToken, hashAuthorToken
+  makeAuthorToken, hashAuthorToken,
+  insertPagePlaceholder, completePageRow
 } from './_shared.js';
 
 // Must match the PRIMARY provider in the waterfall table above.
@@ -154,12 +155,36 @@ export default async function handler(req, res) {
   // browser ever sees the raw token. Subsequent viewers can't claim authorship.
   const authorToken = sharingEnabled ? makeAuthorToken() : null;
 
+  // ---- Stage 1 of the two-stage write ----
+  // Pre-write a placeholder row with the slug + author hash before any
+  // headers are sent. If this fails, the share-slug + author-token headers
+  // are suppressed, so the client never shows a Share button pointing at
+  // a row that doesn't exist. Briefs are stored here too — abuse review
+  // works even on requests that never complete.
+  let placeholderOk = false;
+  if (sharingEnabled) {
+    try {
+      await insertPagePlaceholder({
+        ip,
+        share_slug: shareSlug,
+        author_token_hash: hashAuthorToken(authorToken),
+        brief, ref,
+        referrer: req.headers.referer || req.headers.referrer || null,
+        user_agent: req.headers['user-agent'] || null
+      });
+      placeholderOk = true;
+    } catch (err) {
+      console.error('[CRITICAL] placeholder insert failed; share UI will be',
+        'suppressed for this request — err:', err && err.message);
+    }
+  }
+
   const startedAt = Date.now();
   let streamingStarted = false;
   let clientGone = false;
 
   // Detect client disconnect so we can log ai_disconnected when the stream
-  // ends. We keep reading Anthropic's stream to completion (refusals are
+  // ends. We keep reading the upstream stream to completion (refusals are
   // tiny; full pages aren't worth re-fetching) but flag the state.
   req.on('close', () => { clientGone = true; });
 
@@ -206,8 +231,12 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Accel-Buffering', 'no');
-    if (shareSlug)   res.setHeader('X-AINetscape-Share-Slug',  shareSlug);
-    if (authorToken) res.setHeader('X-AINetscape-Author-Token', authorToken);
+    // Only expose the share + author headers when the placeholder row
+    // actually landed in Mongo — guarantees /p/:slug will resolve to a
+    // real row (body may be empty if completion later fails, but the
+    // row exists and /p/:slug shows the in-character 404 vs. nothing).
+    if (placeholderOk && shareSlug)   res.setHeader('X-AINetscape-Share-Slug',  shareSlug);
+    if (placeholderOk && authorToken) res.setHeader('X-AINetscape-Author-Token', authorToken);
     res.status(200);
     streamingStarted = true;
 
@@ -283,57 +312,60 @@ export default async function handler(req, res) {
       usage,
       share_slug: shareSlug    // sticky across cache hits
     };
-    // Cache successful builds and refusals alike; a repeated identical
-    // brief should get the same answer instantly.
-    cache.set(cacheKey, cachePayload);
 
-    // Only record the share slug + author hash for actual successful builds,
-    // not refusals or partial disconnects — those shouldn't be publicly
-    // addressable or claimable.
-    const persistedSlug = (event === 'ai_generation_completed') ? shareSlug : null;
-    const persistedAuthorHash = (event === 'ai_generation_completed' && authorToken)
-      ? hashAuthorToken(authorToken) : null;
-
-    // Pull the <title> out of the generated HTML for the gallery card display
-    // (Phase 2). Avoids re-parsing body_html on every gallery query.
+    // Pull the <title> out of the generated HTML for the gallery card display.
     let pageTitle = null;
     if (event === 'ai_generation_completed') {
       const m = /<title>([\s\S]*?)<\/title>/i.exec(accumulated || '');
       if (m) pageTitle = m[1].trim().slice(0, 200);
     }
 
-    // Must await: the share slug header has already been sent to the client,
-    // so the Mongo row must be persisted before the function returns — Vercel
-    // can freeze the instance the moment the handler resolves, and an
-    // unawaited insert would land /p/:slug as a 404. Wrapped in try/catch
-    // because logEvent now throws on hard failure (after one retry) — the
-    // share-slug header is already out; nothing we can do about the dead
-    // link, but at least the function returns cleanly and the error lands
-    // loudly in Vercel logs.
-    try {
-      await logEvent({
-        ip, event, brief, data: cachePayload, ref,
-        duration_ms: Date.now() - startedAt,
-        referrer: req.headers.referer || req.headers.referrer || null,
-        user_agent: req.headers['user-agent'] || null,
-        verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null,
-        // Archive whatever the model emitted — full HTML on success, REFUSED
-        // line on refusal, partial body if the client disconnected mid-stream.
-        body_html: accumulated || null,
-        share_slug: persistedSlug,
-        // Gallery fields (Phase 1 — counters init at 0 in _db.js, is_public
-        // defaults true, source defaults 'ai'):
-        page_title: pageTitle,
-        author_token_hash: persistedAuthorHash,
-        source: 'ai',
-        is_public: true
-      });
-    } catch (err) {
-      // logEvent already logged the full stack across both retry attempts;
-      // re-flag at this layer so the slug-to-404 cause is obvious in logs.
-      console.error('[CRITICAL] /p/' + (persistedSlug || '<none>') +
-        ' will 404 — logger gave up on the completion write:', err.message);
+    // ---- Stage 2 of the two-stage write ----
+    // If a placeholder row exists (sharingEnabled + placeholderOk), update
+    // it in place. Cache is only populated on a successful completion so
+    // subsequent identical briefs never replay a slug whose Mongo row was
+    // lost. Without a placeholder (Mongo off, or stage 1 failed), fall
+    // through to the legacy single-insert logEvent path for analytics.
+    let completionOk = false;
+    if (placeholderOk) {
+      try {
+        await completePageRow({
+          share_slug: shareSlug,
+          event,
+          body_html: accumulated || null,
+          page_title: pageTitle,
+          data: cachePayload,
+          duration_ms: Date.now() - startedAt,
+          verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null
+        });
+        completionOk = true;
+      } catch (err) {
+        console.error('[CRITICAL] /p/' + shareSlug + ' — completion update',
+          'failed; row will stay ai_generation_pending and /p/:slug will',
+          '404 via the in-character page:', err.message);
+      }
+    } else {
+      // Either sharing is off or the placeholder failed. No row to update —
+      // still write an analytics-only event so we have a record.
+      try {
+        await logEvent({
+          ip, event, brief, data: cachePayload, ref,
+          duration_ms: Date.now() - startedAt,
+          referrer: req.headers.referer || req.headers.referrer || null,
+          user_agent: req.headers['user-agent'] || null,
+          verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null,
+          body_html: accumulated || null,
+          // No share_slug, no author hash — there's no row for it to attach to.
+          page_title: pageTitle,
+          source: 'ai',
+          is_public: true
+        });
+      } catch (_) { /* logger gave up; nothing else we can do */ }
     }
+
+    // Only populate the cache when both writes landed — otherwise a future
+    // cache hit would replay a slug whose row doesn't fully exist.
+    if (completionOk) cache.set(cacheKey, cachePayload);
   } catch (err) {
     console.error('Handler error:', err);
     if (streamingStarted) {
