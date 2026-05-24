@@ -188,12 +188,14 @@ export default async function handler(req, res) {
       let errBody = null;
       try { errBody = await upstream.json(); } catch (_) {}
       console.error('xAI API error:', upstream.status, errBody && (errBody.error || errBody));
-      await logEvent({
-        ip, event: 'ai_generation_failed', brief, ref,
-        duration_ms: Date.now() - startedAt,
-        referrer: req.headers.referer || null,
-        user_agent: req.headers['user-agent'] || null
-      });
+      try {
+        await logEvent({
+          ip, event: 'ai_generation_failed', brief, ref,
+          duration_ms: Date.now() - startedAt,
+          referrer: req.headers.referer || null,
+          user_agent: req.headers['user-agent'] || null
+        });
+      } catch (_) { /* logger gave up; xAI error response still goes out */ }
       const status = upstream.status === 429 ? 429 : 502;
       return res.status(status).json({
         error: (errBody && errBody.error && (errBody.error.message || errBody.error))
@@ -303,35 +305,48 @@ export default async function handler(req, res) {
     // Must await: the share slug header has already been sent to the client,
     // so the Mongo row must be persisted before the function returns — Vercel
     // can freeze the instance the moment the handler resolves, and an
-    // unawaited insert would land /p/:slug as a 404.
-    await logEvent({
-      ip, event, brief, data: cachePayload, ref,
-      duration_ms: Date.now() - startedAt,
-      referrer: req.headers.referer || req.headers.referrer || null,
-      user_agent: req.headers['user-agent'] || null,
-      verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null,
-      // Archive whatever the model emitted — full HTML on success, REFUSED
-      // line on refusal, partial body if the client disconnected mid-stream.
-      body_html: accumulated || null,
-      share_slug: persistedSlug,
-      // Gallery fields (Phase 1 — counters init at 0 in _db.js, is_public
-      // defaults true, source defaults 'ai'):
-      page_title: pageTitle,
-      author_token_hash: persistedAuthorHash,
-      source: 'ai',
-      is_public: true
-    });
+    // unawaited insert would land /p/:slug as a 404. Wrapped in try/catch
+    // because logEvent now throws on hard failure (after one retry) — the
+    // share-slug header is already out; nothing we can do about the dead
+    // link, but at least the function returns cleanly and the error lands
+    // loudly in Vercel logs.
+    try {
+      await logEvent({
+        ip, event, brief, data: cachePayload, ref,
+        duration_ms: Date.now() - startedAt,
+        referrer: req.headers.referer || req.headers.referrer || null,
+        user_agent: req.headers['user-agent'] || null,
+        verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null,
+        // Archive whatever the model emitted — full HTML on success, REFUSED
+        // line on refusal, partial body if the client disconnected mid-stream.
+        body_html: accumulated || null,
+        share_slug: persistedSlug,
+        // Gallery fields (Phase 1 — counters init at 0 in _db.js, is_public
+        // defaults true, source defaults 'ai'):
+        page_title: pageTitle,
+        author_token_hash: persistedAuthorHash,
+        source: 'ai',
+        is_public: true
+      });
+    } catch (err) {
+      // logEvent already logged the full stack across both retry attempts;
+      // re-flag at this layer so the slug-to-404 cause is obvious in logs.
+      console.error('[CRITICAL] /p/' + (persistedSlug || '<none>') +
+        ' will 404 — logger gave up on the completion write:', err.message);
+    }
   } catch (err) {
     console.error('Handler error:', err);
     if (streamingStarted) {
       try { res.end(); } catch (_) {}
     } else {
-      await logEvent({
-        ip, event: 'ai_generation_failed', brief, ref,
-        duration_ms: Date.now() - startedAt,
-        referrer: req.headers.referer || null,
-        user_agent: req.headers['user-agent'] || null
-      });
+      try {
+        await logEvent({
+          ip, event: 'ai_generation_failed', brief, ref,
+          duration_ms: Date.now() - startedAt,
+          referrer: req.headers.referer || null,
+          user_agent: req.headers['user-agent'] || null
+        });
+      } catch (_) { /* logger gave up; 500 still goes out to client */ }
       return res.status(500).json({ error: 'The generation request could not be completed.' });
     }
   }

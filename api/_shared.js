@@ -189,14 +189,45 @@ export function makeCache({ ttlMs = 10 * 60 * 1000, maxEntries = 200 } = {}) {
 }
 
 // ============================================================
-// Fire-and-forget anonymized logging.
+// Anonymized logging. Retries once on transient Mongo failure (Atlas
+// cold connections, brief network blips, queued pool waits) and throws
+// on final failure — callers MUST wrap in try/catch so a logger crash
+// can't take down a streaming response. Loud console.error on every
+// attempt so Vercel function logs surface the root cause.
+//
+// Known structural limitation: the share-slug response header is sent
+// BEFORE the post-stream logEvent fires, so even with retries a hard
+// Mongo outage will still produce dead /p/:slug links. The real fix is
+// a two-stage write (placeholder at request start, completion update
+// at stream end) — deferred.
 // ============================================================
 export async function logEvent(event) {
   if (!process.env.MONGODB_URI) return;
-  try {
-    const { logEvent: _logEvent } = await import('./_db.js');
-    await _logEvent(event);
-  } catch (err) {
-    console.error('Logger failed:', err);
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const { logEvent: _logEvent } = await import('./_db.js');
+      await _logEvent(event);
+      if (attempt > 1) {
+        console.log('logEvent recovered on retry attempt', attempt,
+          'for event', event && event.event);
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.error('logEvent attempt', attempt, 'failed for event',
+        event && event.event, '— share_slug:', event && event.share_slug,
+        '— err:', err && (err.stack || err.message || err));
+      if (attempt === 1) {
+        await new Promise(r => setTimeout(r, 250));
+      }
+    }
   }
+  // Both attempts failed. Re-throw with a marker so callers know it was
+  // the persistent-storage layer that gave up, not their own code.
+  const e = new Error('logEvent failed after retries: ' +
+    (lastErr && (lastErr.message || lastErr)));
+  e.code = 'LOGEVENT_FAILED';
+  e.cause = lastErr;
+  throw e;
 }

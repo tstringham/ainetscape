@@ -33,16 +33,20 @@ export default async function handler(req, res) {
 
   // Await: Vercel can freeze the function instance the moment the handler
   // resolves, dropping unawaited Mongo writes (same class of bug as the
-  // generate.js share_slug 404).
-  await logEvent({
-    ip,
-    event,
-    brief: typeof body.brief === 'string' ? body.brief.slice(0, 6000) : '',
-    ref: typeof body.ref === 'string' ? body.ref.slice(0, 40) : null,
-    duration_ms: typeof body.duration_ms === 'number' ? body.duration_ms : 0,
-    referrer: req.headers.referer || req.headers.referrer || null,
-    user_agent: req.headers['user-agent'] || null
-  });
+  // generate.js share_slug 404). try/catch because logEvent now throws on
+  // hard failure — this beacon is fire-and-forget so a logger crash
+  // shouldn't 500 the client.
+  try {
+    await logEvent({
+      ip,
+      event,
+      brief: typeof body.brief === 'string' ? body.brief.slice(0, 6000) : '',
+      ref: typeof body.ref === 'string' ? body.ref.slice(0, 40) : null,
+      duration_ms: typeof body.duration_ms === 'number' ? body.duration_ms : 0,
+      referrer: req.headers.referer || req.headers.referrer || null,
+      user_agent: req.headers['user-agent'] || null
+    });
+  } catch (_) { /* logger gave up; client doesn't care, beacon is best-effort */ }
 
   return res.status(204).end();
 }
