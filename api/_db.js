@@ -20,12 +20,22 @@ async function getDb() {
   client = new MongoClient(process.env.MONGODB_URI, { maxPoolSize: 5 });
   await client.connect();
   db = client.db(DB_NAME);
-  // Ensure the share_slug index exists for fast /p/:slug lookup.
-  // Sparse so older rows without a slug aren't included.
+  // Indexes. createIndex is idempotent — safe to call on every cold start.
   try {
     await db.collection('generations').createIndex(
       { share_slug: 1 },
       { sparse: true, name: 'share_slug_idx' }
+    );
+    // Gallery queries filter on (source, event, is_public) and sort by
+    // either ts desc (Recent) or upvotes desc then ts desc (Upvotes).
+    // Two indexes — one per sort order — keep both queries fast.
+    await db.collection('generations').createIndex(
+      { source: 1, event: 1, is_public: 1, ts: -1 },
+      { name: 'gallery_recent_idx' }
+    );
+    await db.collection('generations').createIndex(
+      { source: 1, event: 1, is_public: 1, upvotes: -1, ts: -1 },
+      { name: 'gallery_upvotes_idx' }
     );
   } catch (_) { /* index may already exist; ignore */ }
   return db;
@@ -36,6 +46,41 @@ export async function findBySlug(slug) {
   if (!slug) return null;
   const d = await getDb();
   return d.collection('generations').findOne({ share_slug: slug });
+}
+
+// ---- Gallery queries ----
+// Only fully-completed, public AI generations enter the gallery. Older
+// rows that pre-date is_public default-true at write time; the
+// `{ $ne: false }` predicate treats missing field as public.
+const GALLERY_FILTER = {
+  source: 'ai',
+  event: 'ai_generation_completed',
+  is_public: { $ne: false },
+  // Require a page_title and body — guards against rows whose completion
+  // update failed (stage 2 of the two-stage write).
+  page_title: { $exists: true, $nin: [null, ''] },
+  body_html:  { $exists: true, $nin: [null, ''] }
+};
+const GALLERY_PROJECTION = {
+  share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, _id: 0
+};
+
+export async function findGalleryPages({ sort = 'recent', skip = 0, limit = 24 }) {
+  const d = await getDb();
+  const sortSpec = (sort === 'upvotes')
+    ? { upvotes: -1, ts: -1 }
+    : { ts: -1 };
+  return d.collection('generations')
+    .find(GALLERY_FILTER, { projection: GALLERY_PROJECTION })
+    .sort(sortSpec)
+    .skip(Math.max(0, skip))
+    .limit(Math.max(1, Math.min(100, limit)))
+    .toArray();
+}
+
+export async function countGalleryPages() {
+  const d = await getDb();
+  return d.collection('generations').countDocuments(GALLERY_FILTER);
 }
 
 // ============================================================

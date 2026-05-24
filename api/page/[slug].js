@@ -120,6 +120,8 @@ function decorate(html, slug, doc) {
       '<div style="margin-top:4px; font-size:10px; line-height:1.4; ' +
       'background:rgba(255,255,255,0.85); padding:2px 8px; ' +
       'border:1px solid #888; display:inline-block;">' +
+        '<a href="https://ainetscape.com/gallery"   style="color:#000080;text-decoration:underline;">Gallery</a>' +
+        '<span style="color:#666;margin:0 4px;">·</span>' +
         '<a href="https://ainetscape.com/terms"     style="color:#000080;text-decoration:underline;">Terms</a>' +
         '<span style="color:#666;margin:0 4px;">·</span>' +
         '<a href="https://ainetscape.com/privacy"   style="color:#000080;text-decoration:underline;">Privacy</a>' +

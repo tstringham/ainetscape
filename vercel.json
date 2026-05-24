@@ -43,9 +43,13 @@
     },
     "api/page/[slug].js": {
       "maxDuration": 10
+    },
+    "api/gallery.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [
-    { "source": "/p/:slug", "destination": "/api/page/:slug" }
+    { "source": "/p/:slug", "destination": "/api/page/:slug" },
+    { "source": "/gallery", "destination": "/api/gallery" }
   ]
 }
