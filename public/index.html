@@ -1332,14 +1332,71 @@ function renderGeneratedIntoIframe(html) {
   if (inSourceMode) toggleSource();
   const iframe = document.createElement('iframe');
   iframe.className = 'editor-iframe';
-  // scripts only; no allow-same-origin so the iframe gets a unique opaque
-  // origin and can't reach ainetscape.com cookies / localStorage / Mongo.
-  iframe.setAttribute('sandbox', 'allow-scripts');
+  // allow-same-origin is required so the parent toolbar can reach into
+  // contentDocument and call execCommand / read selection — i.e. so the
+  // page is actually editable after AI generation. The model output is
+  // ours (system-prompt-constrained, server-side-cached, server-logged);
+  // the parent-reach risk is acceptable for that trust posture.
+  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
   iframe.srcdoc = html;
+  // Enable editing the moment the iframe document is ready. designMode
+  // = 'on' is the across-browser way to make the whole document
+  // editable AND have execCommand take effect on it from outside.
+  iframe.addEventListener('load', () => {
+    const d = iframe.contentDocument;
+    if (!d) return;
+    try { d.designMode = 'on'; } catch (_) {}
+    // Wire tag-path + selection-tracking on the iframe so the status
+    // bar updates as the caret moves through generated content.
+    d.addEventListener('keyup', updateTagPath);
+    d.addEventListener('mouseup', updateTagPath);
+    // Track image clicks so the Image dialog can replace the
+    // selected <img> in-place rather than only inserting new ones.
+    d.addEventListener('click', e => {
+      const img = e.target && e.target.tagName === 'IMG' ? e.target : null;
+      currentSelectedImage = img;
+    });
+  });
   editor.innerHTML = '';
   editor.appendChild(iframe);
   editor.classList.add('has-iframe');
   updateShareButtonVisibility();
+}
+
+// ---- Active editing context ----
+// In iframe mode (AI-generated page mounted), all execCommand /
+// selection / serialization needs to target the iframe's document
+// rather than the parent's. These helpers centralize that dispatch.
+function getActiveIframe() {
+  if (!editor.classList.contains('has-iframe')) return null;
+  return editor.querySelector('iframe.editor-iframe');
+}
+function getActiveDoc() {
+  const f = getActiveIframe();
+  return (f && f.contentDocument) ? f.contentDocument : document;
+}
+function getActiveWin() {
+  const f = getActiveIframe();
+  return (f && f.contentWindow) ? f.contentWindow : window;
+}
+function getActiveEditable() {
+  const d = getActiveDoc();
+  return (d !== document) ? d.body : editor;
+}
+// Currently-clicked <img> in iframe mode, used by the Image dialog
+// to swap attrs in place. Cleared by openDialog when a non-image
+// context opens the dialog.
+let currentSelectedImage = null;
+
+// Serialize the live iframe document back to HTML, including DOCTYPE
+// so Save / Source / Preview see the user's edits, not the stale
+// `currentDocHTML` snapshot taken at generation time.
+function getCurrentIframeHTML() {
+  const d = getActiveDoc();
+  if (d === document) return null;
+  const root = d.documentElement;
+  if (!root) return null;
+  return '<!DOCTYPE html>\n' + root.outerHTML;
 }
 function exitIframeMode() {
   currentDocHTML = null;
@@ -1360,15 +1417,18 @@ const reduceMotion = (function () {
 })();
 
 // ---- Selection persistence (for dialogs) ----
+// In iframe mode the selection lives in the iframe's window, not the
+// parent's, so all selection reads/writes route through getActiveWin().
 function saveSelection() {
-  const sel = window.getSelection();
-  if (sel.rangeCount > 0) savedSelection = sel.getRangeAt(0).cloneRange();
+  const sel = getActiveWin().getSelection();
+  if (sel && sel.rangeCount > 0) savedSelection = sel.getRangeAt(0).cloneRange();
 }
 function restoreSelection() {
   if (!savedSelection) return;
-  const sel = window.getSelection();
+  const sel = getActiveWin().getSelection();
+  if (!sel) return;
   sel.removeAllRanges();
-  sel.addRange(savedSelection);
+  try { sel.addRange(savedSelection); } catch (_) {}
 }
 
 // ---- Status clock ----
@@ -1382,11 +1442,12 @@ setInterval(tickClock, 1000); tickClock();
 
 // ---- Status: which tags surround the caret ----
 function updateTagPath() {
-  const sel = window.getSelection();
-  if (!sel.rangeCount) { statusTags.textContent = '<body>'; return; }
+  const sel = getActiveWin().getSelection();
+  if (!sel || !sel.rangeCount) { statusTags.textContent = '<body>'; return; }
   let node = sel.getRangeAt(0).startContainer;
+  const root = getActiveEditable();
   const path = [];
-  while (node && node !== editor && path.length < 6) {
+  while (node && node !== root && path.length < 6) {
     if (node.nodeType === 1) path.unshift('<' + node.tagName.toLowerCase() + '>');
     node = node.parentNode;
   }
@@ -1394,6 +1455,12 @@ function updateTagPath() {
 }
 editor.addEventListener('keyup', updateTagPath);
 editor.addEventListener('mouseup', updateTagPath);
+// In contentEditable (non-iframe) mode, track image clicks so the Image
+// dialog can replace selected images instead of always inserting new ones.
+editor.addEventListener('click', e => {
+  if (editor.classList.contains('has-iframe')) return;
+  currentSelectedImage = (e.target && e.target.tagName === 'IMG') ? e.target : null;
+});
 
 // ---- Status: short-lived message ----
 function setStatus(msg) {
@@ -1410,9 +1477,14 @@ function showToast(msg) {
 }
 
 // ---- Formatting toolbar ----
+// Route execCommand to whichever document is currently being edited —
+// the iframe's contentDocument in AI-generated-page mode, the parent
+// document otherwise.
 function exec(cmd, val) {
-  editor.focus();
-  try { document.execCommand(cmd, false, val == null ? null : val); } catch (_) {}
+  const doc = getActiveDoc();
+  const ed = getActiveEditable();
+  try { ed.focus(); } catch (_) {}
+  try { doc.execCommand(cmd, false, val == null ? null : val); } catch (_) {}
   updateTagPath();
 }
 
@@ -1451,7 +1523,7 @@ document.getElementById('main-toolbar').addEventListener('click', e => {
     case 'source':  toggleSource(); break;
     case 'link':    saveSelection(); openDialog('dlg-link'); break;
     case 'anchor':  insertAnchor(); break;
-    case 'image':   saveSelection(); openDialog('dlg-image'); break;
+    case 'image':   saveSelection(); openImageDialog(); break;
     case 'hline':   exec('insertHorizontalRule'); break;
     case 'table':   saveSelection(); openDialog('dlg-table'); break;
     case 'spell':   showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)'); break;
@@ -1471,10 +1543,11 @@ function newDoc() {
 function saveDoc() {
   const title = prompt('Page title:', docTitle) || docTitle;
   docTitle = title;
-  // AI-generated pages are already complete documents — save verbatim.
-  // Edited starter docs are body fragments — wrap as a 1997-style page.
-  const html = currentDocHTML
-    ? currentDocHTML
+  // AI-generated pages are full documents living in the iframe — read
+  // the current iframe HTML so any post-AI edits are saved. Starter docs
+  // are body fragments in editor.innerHTML — wrap as a 1997-style page.
+  const html = getActiveIframe()
+    ? getCurrentIframeHTML()
     : wrapAsFullPage(editor.innerHTML, title);
   const blob = new Blob([html], {type: 'text/html'});
   const a = document.createElement('a');
@@ -1528,7 +1601,9 @@ ${bodyHTML}
 }
 
 function preview() {
-  const html = currentDocHTML || wrapAsFullPage(editor.innerHTML, docTitle);
+  const html = getActiveIframe()
+    ? getCurrentIframeHTML()
+    : wrapAsFullPage(editor.innerHTML, docTitle);
   const w = window.open('', '_blank');
   if (!w) {
     showAlert('Preview', 'The preview window could not be opened.\n\nPlease allow pop-up windows for this site and try again.');
@@ -1539,7 +1614,8 @@ function preview() {
 
 function toggleSource() {
   if (!inSourceMode) {
-    sourceView.value = formatHTML(currentDocHTML || editor.innerHTML);
+    const liveHtml = getActiveIframe() ? getCurrentIframeHTML() : editor.innerHTML;
+    sourceView.value = formatHTML(liveHtml);
     editor.parentElement.style.display = 'none';
     sourceView.style.display = 'block';
     sourceView.focus();
@@ -1601,7 +1677,7 @@ document.querySelector('[data-link-ok]').addEventListener('click', () => {
   const text = document.getElementById('link-text').value.trim();
   if (!url) return;
   restoreSelection();
-  editor.focus();
+  try { getActiveEditable().focus(); } catch (_) {}
   if (savedSelection && savedSelection.toString()) {
     exec('createLink', url);
   } else {
@@ -1613,6 +1689,20 @@ document.querySelector('[data-link-ok]').addEventListener('click', () => {
   document.getElementById('link-text').value = '';
 });
 
+// Pre-fill the Image dialog from the currently-selected <img> so the
+// user can edit-in-place rather than only insert new images. Falls
+// back to clean fields when nothing is selected.
+function openImageDialog() {
+  const img = currentSelectedImage;
+  document.getElementById('img-src').value   = img ? (img.getAttribute('src') || '') : '';
+  document.getElementById('img-alt').value   = img ? (img.getAttribute('alt') || '') : '';
+  document.getElementById('img-w').value     = img ? (img.getAttribute('width')  || '') : '';
+  document.getElementById('img-h').value     = img ? (img.getAttribute('height') || '') : '';
+  const alignSel = document.getElementById('img-align');
+  if (alignSel) alignSel.value = img ? (img.getAttribute('align') || '') : '';
+  openDialog('dlg-image');
+}
+
 document.querySelector('[data-img-ok]').addEventListener('click', () => {
   const src = document.getElementById('img-src').value.trim();
   if (!src) return;
@@ -1620,14 +1710,26 @@ document.querySelector('[data-img-ok]').addEventListener('click', () => {
   const w = document.getElementById('img-w').value.trim();
   const h = document.getElementById('img-h').value.trim();
   const align = document.getElementById('img-align').value;
-  let tag = `<img src="${escapeHTML(src)}" alt="${escapeHTML(alt)}"`;
-  if (w) tag += ` width="${escapeHTML(w)}"`;
-  if (h) tag += ` height="${escapeHTML(h)}"`;
-  if (align) tag += ` align="${escapeHTML(align)}"`;
-  tag += '>';
-  restoreSelection();
-  editor.focus();
-  exec('insertHTML', tag);
+
+  if (currentSelectedImage) {
+    // In-place swap: keep node identity so layout/listeners survive.
+    const img = currentSelectedImage;
+    img.setAttribute('src', src);
+    if (alt) img.setAttribute('alt', alt); else img.removeAttribute('alt');
+    if (w)   img.setAttribute('width',  w);  else img.removeAttribute('width');
+    if (h)   img.setAttribute('height', h);  else img.removeAttribute('height');
+    if (align) img.setAttribute('align', align); else img.removeAttribute('align');
+    currentSelectedImage = null;
+  } else {
+    let tag = `<img src="${escapeHTML(src)}" alt="${escapeHTML(alt)}"`;
+    if (w) tag += ` width="${escapeHTML(w)}"`;
+    if (h) tag += ` height="${escapeHTML(h)}"`;
+    if (align) tag += ` align="${escapeHTML(align)}"`;
+    tag += '>';
+    restoreSelection();
+    try { getActiveEditable().focus(); } catch (_) {}
+    exec('insertHTML', tag);
+  }
   document.getElementById('dlg-image').classList.remove('open');
   ['img-src','img-alt','img-w','img-h'].forEach(id => document.getElementById(id).value = '');
 });
@@ -1645,7 +1747,7 @@ document.querySelector('[data-tbl-ok]').addEventListener('click', () => {
   }
   html += '</table>';
   restoreSelection();
-  editor.focus();
+  try { getActiveEditable().focus(); } catch (_) {}
   exec('insertHTML', html);
   document.getElementById('dlg-table').classList.remove('open');
 });
@@ -2931,7 +3033,9 @@ function insertHTMLTag() {
   if (!tag) return;
   const safe = String(tag).replace(/[^a-zA-Z0-9]/g, '');
   if (!safe) return;
-  exec('insertHTML', '<' + safe + '>' + (window.getSelection().toString() || 'text') + '</' + safe + '>');
+  const sel = getActiveWin().getSelection();
+  const selText = (sel && sel.toString()) || 'text';
+  exec('insertHTML', '<' + safe + '>' + selText + '</' + safe + '>');
 }
 
 function openSpecialCharDialog() {
@@ -2948,7 +3052,7 @@ function openSpecialCharDialog() {
     document.querySelectorAll('.specials-grid button').forEach(b => {
       b.addEventListener('click', () => {
         restoreSelection();
-        editor.focus();
+        try { getActiveEditable().focus(); } catch (_) {}
         exec('insertHTML', b.dataset.ch);
       });
     });
@@ -3161,7 +3265,7 @@ const MENUS = {
     { label: 'Cut',          acc: 't', shortcut: 'Ctrl+X', action: () => exec('cut') },
     { label: 'Copy',         acc: 'C', shortcut: 'Ctrl+C', action: () => exec('copy') },
     { label: 'Paste',        acc: 'P', shortcut: 'Ctrl+V', action: () => exec('paste') },
-    { label: 'Select All',   acc: 'A', shortcut: 'Ctrl+A', action: () => { editor.focus(); exec('selectAll'); } },
+    { label: 'Select All',   acc: 'A', shortcut: 'Ctrl+A', action: () => { try { getActiveEditable().focus(); } catch (_) {} exec('selectAll'); } },
     { type: 'separator' },
     { label: 'Find in Page...', acc: 'F', shortcut: 'Ctrl+F', action: () => findInPage() },
     { type: 'separator' },
@@ -3182,7 +3286,7 @@ const MENUS = {
   Insert: [
     { label: 'Link...',     acc: 'L', shortcut: 'Ctrl+K', action: () => { saveSelection(); openDialog('dlg-link'); } },
     { label: 'Anchor...',   acc: 'A',                     action: () => insertAnchor() },
-    { label: 'Image...',    acc: 'I',                     action: () => { saveSelection(); openDialog('dlg-image'); } },
+    { label: 'Image...',    acc: 'I',                     action: () => { saveSelection(); openImageDialog(); } },
     { type: 'separator' },
     { label: 'H. Line',     acc: 'H',                     action: () => exec('insertHorizontalRule') },
     { label: 'Table...',    acc: 'T',                     action: () => { saveSelection(); openDialog('dlg-table'); } },
