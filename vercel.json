@@ -55,6 +55,9 @@
     },
     "api/cron/site-of-the-week.js": {
       "maxDuration": 60
+    },
+    "api/site-stats/homepage.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [

@@ -1094,7 +1094,7 @@
         <p><font face="Times New Roman" size="4">This HTML page has a strong sense of <b>nostalgia</b> with a dash of <b>time travel</b>. Feel free to edit it, or let our <b>AI Composer&trade;</b> make another dev job redundant&mdash;even in 1997.</font></p>
         <h2><font color="#800080">My Interests</font></h2>
         <ul>
-          <li><font size="3">Deep Thought 7.5</font></li>
+          <li><font size="3">Deep Thought 42</font></li>
           <li><font size="3">Not panicking</font></li>
           <li><font size="3">Cleaning my mouse</font></li>
           <!-- <li><font size="3">Applying to <a href="https://a16z.com">Andreessen Horowitz</a></font></li> -->
@@ -1104,7 +1104,7 @@
         <center>
           <p><font size="2"><i id="last-updated">Last updated: May 22, 2026</i></font></p>
           <p><font size="2"><a href="mailto:webmaster@ainetscape.com">webmaster@ainetscape.com</a></font></p>
-          <p><font size="1" color="#808080">This page has been visited <b>00042</b> times.</font></p>
+          <p><font size="1" color="#808080">This page has been visited <b id="visitor-count">&mdash;</b> times.</font></p>
         </center>
       </div>
     </div>
@@ -3297,13 +3297,10 @@ editor.addEventListener('click', (e) => {
   }
 });
 
-// Stamp the starter doc's "Last updated" line with the build-time value
-// set by /last-updated.js. The static placeholder stays as a fallback
-// if the file failed to load.
-if (window.__LAST_UPDATED__) {
-  const lu = document.getElementById('last-updated');
-  if (lu) lu.textContent = 'Last updated: ' + window.__LAST_UPDATED__;
-}
+// "Last updated" and the visitor counter are both driven by the
+// dynamic /last-updated.js loaded in <head> — it computes today's
+// month/day (year locked to 1997) and fetches the live homepage
+// visit count from /api/site-stats/homepage. Nothing to do here.
 </script>
 
 </body>

@@ -155,6 +155,42 @@ export async function rateLimit(ip, kind = 'gen', {
 }
 
 // ============================================================
+// One-homepage-visit-per-IP-per-UTC-day dedupe. The key includes the
+// UTC date so the bucket rolls at 00:00 UTC. TTL is 48h so the row
+// always outlives the date boundary it represents — no race where the
+// key expires before we check it on a late-night refresh. Returns
+// true on a fresh visit (caller should increment), false otherwise.
+// ============================================================
+const HOMEPAGE_VISIT_TTL_SECONDS = 60 * 60 * 48;
+const memHomepageVisits = new Map();
+
+export async function recordHomepageVisit(ip) {
+  const ipHash = crypto.createHash('sha256')
+    .update((process.env.IP_HASH_SALT || 'ainetscape-default-salt-change-me') + String(ip))
+    .digest('hex').slice(0, 16);
+  const today = new Date().toISOString().slice(0, 10);   // YYYY-MM-DD UTC
+  const key = `homepage:${ipHash}:${today}`;
+  const redis = getRedis();
+  if (!redis) {
+    const last = memHomepageVisits.get(key);
+    if (last && (Date.now() - last) < HOMEPAGE_VISIT_TTL_SECONDS * 1000) return false;
+    memHomepageVisits.set(key, Date.now());
+    if (memHomepageVisits.size > 4000) {
+      const cutoff = Date.now() - HOMEPAGE_VISIT_TTL_SECONDS * 1000;
+      for (const [k, t] of memHomepageVisits) if (t < cutoff) memHomepageVisits.delete(k);
+    }
+    return true;
+  }
+  try {
+    const ok = await redis.set(key, '1', { nx: true, ex: HOMEPAGE_VISIT_TTL_SECONDS });
+    return ok === 'OK';
+  } catch (err) {
+    console.error('Homepage visit dedupe Redis failed — counting the visit:', err);
+    return true;
+  }
+}
+
+// ============================================================
 // One-hit-per-IP-per-slug-per-day dedupe. Returns true if this is a
 // fresh hit (and records it), false if the IP already viewed this
 // slug today. The window resets at the TTL boundary, not midnight —

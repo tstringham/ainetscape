@@ -291,6 +291,71 @@ export async function incrementHit(slug) {
   return doc ? (doc.hits || 0) : null;
 }
 
+// ============================================================
+// Homepage visitor counter.
+//
+// siteStats holds one row per tracked surface; today only 'homepage'
+// exists. Doc shape: { _id: 'homepage', count: <int>, updatedAt: Date }.
+//
+// The seed value (1042) is loaded the first time the doc is touched,
+// so a fresh deployment starts with a plausible-looking count rather
+// than 1 — period sites all faked their counters at launch and so
+// do we. The seed itself counts as the first visit; subsequent
+// IP-deduped visits each $inc by 1.
+// ============================================================
+const HOMEPAGE_SEED = 1042;
+
+export async function getHomepageVisitCount() {
+  const d = await getDb();
+  const doc = await d.collection('siteStats').findOne(
+    { _id: 'homepage' },
+    { projection: { count: 1, _id: 0 } }
+  );
+  return doc ? (doc.count || 0) : 0;
+}
+
+// Atomically increments + returns the new count. Seeds the doc at
+// HOMEPAGE_SEED on first call (without an extra +1 — the seed IS
+// the first visit's count). Returns whichever post-state the caller
+// should display.
+export async function incrementHomepageVisits() {
+  const d = await getDb();
+  const col = d.collection('siteStats');
+
+  // Common path: doc exists, $inc and return.
+  const updated = await col.findOneAndUpdate(
+    { _id: 'homepage' },
+    { $inc: { count: 1 }, $set: { updatedAt: new Date() } },
+    { returnDocument: 'after', projection: { count: 1, _id: 0 } }
+  );
+  const updatedDoc = (updated && updated.value) ? updated.value : updated;
+  if (updatedDoc && typeof updatedDoc.count === 'number') {
+    return updatedDoc.count;
+  }
+
+  // Doc didn't exist — seed it. Race-safe: a concurrent visitor may
+  // beat us to the insert; in that case fall back to a $inc.
+  try {
+    await col.insertOne({
+      _id: 'homepage',
+      count: HOMEPAGE_SEED,
+      updatedAt: new Date()
+    });
+    return HOMEPAGE_SEED;
+  } catch (err) {
+    if (err && err.code === 11000) {
+      const retry = await col.findOneAndUpdate(
+        { _id: 'homepage' },
+        { $inc: { count: 1 }, $set: { updatedAt: new Date() } },
+        { returnDocument: 'after', projection: { count: 1, _id: 0 } }
+      );
+      const retryDoc = (retry && retry.value) ? retry.value : retry;
+      return retryDoc ? (retryDoc.count || HOMEPAGE_SEED) : HOMEPAGE_SEED;
+    }
+    throw err;
+  }
+}
+
 function hashIp(ip) {
   return crypto.createHash('sha256').update(IP_SALT + String(ip)).digest('hex').slice(0, 16);
 }
