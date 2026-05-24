@@ -304,9 +304,19 @@
     text-decoration: underline;
     margin-left: 4px;
   }
+  .status-links {
+    font-family: "MS Sans Serif", "Geneva", "Tahoma", sans-serif;
+    font-size: 10px; white-space: nowrap;
+  }
+  .status-links a { color: var(--select); text-decoration: underline; }
+  .status-links a:visited { color: var(--vlink); }
+  .status-links .sep { color: #666; margin: 0 4px; }
   @media (max-width: 640px) {
     #status-tags { display: none; }
     #status-msg { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  }
+  @media (max-width: 560px) {
+    .status-links { display: none; }
   }
 </style>
 </head>
@@ -381,6 +391,9 @@
   <div class="statusbar">
     <div class="status-pane flex" id="status-msg">Document: Error 404</div>
     <div class="status-pane" id="status-tags">&lt;body&gt;</div>
+    <div class="status-pane status-links">
+      <a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
+    </div>
     <div class="status-modem" title="Connection speed">
       <span>28.8 kbps</span><span id="modem-cta">— upgrade to 56k?</span>
     </div>

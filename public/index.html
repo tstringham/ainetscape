@@ -637,6 +637,21 @@
     font-weight: bold;
   }
 
+  /* Persistent footer-link cluster — Terms · Privacy · Copyright · FAQ.
+     Lives in the status bar so it appears on every chrome surface. */
+  .status-links {
+    font-family: "MS Sans Serif", "Geneva", "Tahoma", sans-serif;
+    font-size: 10px; white-space: nowrap;
+  }
+  .status-links a {
+    color: var(--select); text-decoration: underline;
+  }
+  .status-links a:visited { color: var(--vlink); }
+  .status-links .sep { color: #666; margin: 0 4px; }
+  @media (max-width: 560px) {
+    .status-links { display: none; }
+  }
+
   /* ---- Modal dialogs (Motif style) ---- */
   .modal-backdrop {
     display: none;
@@ -1098,6 +1113,9 @@
   <div class="statusbar">
     <div class="status-pane flex" id="status-msg">Document: Done</div>
     <div class="status-pane" id="status-tags">&lt;body&gt;</div>
+    <div class="status-pane status-links">
+      <a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
+    </div>
     <button class="status-pane status-modem" id="modem-upgrade" title="Upgrade your connection">
       <span id="modem-speed">28.8 kbps</span><span id="modem-cta">— upgrade to 56k?</span>
     </button>

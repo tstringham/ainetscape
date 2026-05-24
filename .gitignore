@@ -10,3 +10,9 @@ public/last-updated.js
 
 # Generated at build time by scripts/build_ga.mjs
 public/ga.js
+
+# Generated at build time by scripts/build_pages.mjs
+public/terms.html
+public/privacy.html
+public/copyright.html
+public/faq.html

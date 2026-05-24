@@ -10,14 +10,16 @@
     "build:og": "node scripts/build_og.mjs",
     "build:lastupdated": "node scripts/build_lastupdated.mjs",
     "build:ga": "node scripts/build_ga.mjs",
+    "build:pages": "node scripts/build_pages.mjs",
     "build:assets": "npm run build:favicons && npm run build:og",
-    "vercel-build": "npm run build:lastupdated && npm run build:ga"
+    "vercel-build": "npm run build:lastupdated && npm run build:ga && npm run build:pages"
   },
   "dependencies": {
     "@upstash/redis": "^1.34.3",
     "mongodb": "^6.12.0"
   },
   "devDependencies": {
+    "marked": "^18.0.4",
     "playwright": "^1.49.1"
   }
 }
