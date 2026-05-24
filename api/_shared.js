@@ -154,6 +154,36 @@ export async function rateLimit(ip, kind = 'gen', {
   }
 }
 
+// ============================================================
+// One-vote-per-IP-per-slug dedupe. Returns true if this is a fresh vote
+// (and records it), false if the IP has already voted on this slug.
+// Backed by Redis SETNX with a 30-day TTL when Upstash is configured;
+// in-memory fallback for local dev (per-instance only — good enough).
+// ============================================================
+const VOTE_TTL_SECONDS = 60 * 60 * 24 * 30;
+const memVotes = new Map();
+
+export async function recordVote(ip, slug) {
+  const ipHash = crypto.createHash('sha256')
+    .update((process.env.IP_HASH_SALT || 'ainetscape-default-salt-change-me') + String(ip))
+    .digest('hex').slice(0, 16);
+  const key = `voted:${ipHash}:${slug}`;
+  const redis = getRedis();
+  if (!redis) {
+    if (memVotes.has(key)) return false;
+    memVotes.set(key, Date.now());
+    return true;
+  }
+  try {
+    const ok = await redis.set(key, '1', { nx: true, ex: VOTE_TTL_SECONDS });
+    // Upstash returns 'OK' on success, null when the key already existed.
+    return ok === 'OK';
+  } catch (err) {
+    console.error('Vote dedupe Redis failed — allowing the vote:', err);
+    return true;
+  }
+}
+
 // Friendly 429 messages by scope. The copy stays in character — every line
 // could plausibly come from a 1997 ISP help desk.
 export function rateLimitMessage(scope) {

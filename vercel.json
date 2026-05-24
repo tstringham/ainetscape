@@ -46,6 +46,9 @@
     },
     "api/gallery.js": {
       "maxDuration": 10
+    },
+    "api/vote.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [

@@ -78,13 +78,13 @@ export default async function handler(req, res) {
 // Gallery content (grid + sort toggle + pagination)
 // ============================================================
 function renderGalleryContent({ pages, page, totalPages, sort, total }) {
+  // Quiet, period-correct heading: Times Roman ~h2, single deep blue,
+  // matching the rest of the chrome's register rather than Geocities
+  // rainbow. No heavy rule below — the subtitle separates it from the
+  // sort row.
   const intro =
-    '<h1><span class="red">AI Composer</span> <span class="blue">Gallery</span></h1>' +
-    '<p style="font-size:13pt; margin:0 0 6px;">' +
-      escapeHtml(total === 0
-        ? 'No pages yet. Be the first.'
-        : (total + ' published page' + (total === 1 ? '' : 's') + ' so far.')) +
-    '</p>';
+    '<h2 class="gallery-h">AI Composer Gallery</h2>' +
+    '<p class="gallery-sub">A directory of recently composed pages.</p>';
 
   const sortToggle =
     '<div class="gallery-toolbar">' +
@@ -117,25 +117,36 @@ function renderSortLink(label, value, currentSort) {
 function renderCard(p) {
   const slug = String(p.share_slug || '');
   const title = String(p.page_title || 'Untitled');
-  const upvotes = formatCount(p.upvotes);
+  const upvotes = Number(p.upvotes) || 0;
   const hits = formatCount(p.hits);
   const date = formatGalleryDate(p.ts);
   const href = '/p/' + slug;
   const thumb = microlinkThumbnailUrl(slug);
 
-  return '<a class="gallery-card" href="' + escapeAttr(href) + '">' +
-    '<div class="gallery-thumb">' +
+  // Only the thumbnail and the title are links to /p/:slug. Everything
+  // else in .gallery-stats is plain text. The upvote button POSTs to
+  // /api/vote and refreshes its own count inline.
+  return '<div class="gallery-card">' +
+    '<a class="gallery-thumb" href="' + escapeAttr(href) + '" tabindex="-1" aria-hidden="true">' +
       '<img src="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' +
-    '</div>' +
+    '</a>' +
     '<div class="gallery-meta">' +
-      '<div class="gallery-title">' + escapeHtml(title) + '</div>' +
-      '<div class="gallery-stats">' +
-        'Upvotes: ' + escapeHtml(upvotes) +
-        ' &middot; Hits: ' + escapeHtml(hits) +
+      '<a class="gallery-title" href="' + escapeAttr(href) + '" title="' + escapeAttr(title) + '">' +
+        escapeHtml(title) +
+      '</a>' +
+      '<div class="gallery-row">' +
+        '<button type="button" class="upvote-btn" data-slug="' + escapeAttr(slug) + '" ' +
+          'title="Cool vote">&#9650; Upvote</button>' +
+        '<span class="gallery-stats">' +
+          'Upvotes: <span class="vote-count" data-slug="' + escapeAttr(slug) + '">' +
+            escapeHtml(formatCount(upvotes)) +
+          '</span>' +
+          ' &middot; Hits: ' + escapeHtml(hits) +
+          ' &mdash; ' + escapeHtml(date) +
+        '</span>' +
       '</div>' +
-      '<div class="gallery-date">' + escapeHtml(date) + '</div>' +
     '</div>' +
-  '</a>';
+  '</div>';
 }
 
 function renderPagination({ page, totalPages, sort }) {
@@ -329,10 +340,49 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
   .doc-content h1 .blue { color: #0000cc; }
   .doc-content a { color: #0000cc; text-decoration: underline; }
   .doc-content a:visited { color: #551a8b; }
-  /* ---- Gallery-specific ---- */
+  /* ---- Format bar (decorative on /gallery — same chrome as index) ---- */
+  .format-bar {
+    display: flex; align-items: center; gap: 2px; padding: 3px;
+    background: var(--face); border-bottom: 1px solid var(--sh);
+    flex-shrink: 0;
+  }
+  .format-bar select,
+  .format-bar input[type=color] {
+    height: 21px; background: white;
+    border: 1px solid; border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    font-family: "MS Sans Serif", sans-serif; font-size: 11px; padding: 0 2px;
+  }
+  .fbtn {
+    width: 22px; height: 22px; background: var(--face);
+    border: 2px solid; border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    cursor: default; user-select: none;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Times New Roman", serif; font-size: 13px; padding: 0;
+    color: var(--text);
+  }
+  .fbtn.b { font-weight: bold; }
+  .fbtn.i { font-style: italic; }
+  .fbtn.u { text-decoration: underline; }
+  .fbtn:disabled, .format-bar select:disabled, .format-bar input:disabled { opacity: 0.85; }
+  @media (max-width: 820px) {
+    .format-bar { flex-wrap: wrap; }
+    .format-bar select { max-width: 90px; font-size: 10px; }
+  }
+  /* ---- Gallery heading / sort row ---- */
+  .doc-content h2.gallery-h {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 20pt; font-weight: bold; color: #000080;
+    margin: 0 0 4px; line-height: 1.15;
+    border: none; padding: 0;
+  }
+  .gallery-sub {
+    font-family: "Times New Roman", Times, serif;
+    font-style: italic; font-size: 12pt; color: #333;
+    margin: 0 0 14px;
+  }
   .gallery-toolbar {
     display: flex; justify-content: space-between; align-items: center;
-    margin: 16px 0 24px; font-size: 12pt;
+    margin: 0 0 16px; font-size: 12pt;
     font-family: "MS Sans Serif", sans-serif;
   }
   .gallery-sort a {
@@ -342,25 +392,24 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
   .gallery-sort a.active {
     font-weight: bold; color: #000; text-decoration: underline;
   }
+  /* ---- Card grid: tighter density (1997 directory) ---- */
   .gallery-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-    margin: 0 0 24px;
+    gap: 14px;
+    margin: 0 0 20px;
   }
-  @media (max-width: 819px) { .gallery-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 819px) { .gallery-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
   @media (max-width: 639px) { .gallery-grid { grid-template-columns: 1fr; } }
   .gallery-card {
     background: white;
     border: 1px solid;
     border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
-    text-decoration: none;
-    color: inherit;
     display: flex; flex-direction: column;
-    transition: transform 0.12s;
   }
   .gallery-card:hover { border-color: #ff00cc #00ccff #00ccff #ff00cc; }
   .gallery-thumb {
+    display: block;
     aspect-ratio: 3 / 2;
     background: #eee;
     border-bottom: 1px solid var(--sh);
@@ -372,28 +421,51 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
     display: block;
   }
   .gallery-meta {
-    padding: 10px 12px;
+    padding: 8px 10px 9px;
     font-family: "MS Sans Serif", "Geneva", Tahoma, sans-serif;
     font-size: 11px;
   }
   .gallery-title {
     font-family: "Times New Roman", Times, serif;
-    font-weight: bold; font-size: 13pt;
+    font-weight: bold; font-size: 14px;
     color: #000080;
     margin: 0 0 6px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    display: block;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    min-height: 2.4em;
     line-height: 1.2;
+    text-decoration: underline;
   }
   .gallery-card:hover .gallery-title { color: #cc00cc; }
-  .gallery-stats { font-size: 11px; color: #444; margin: 0 0 3px; }
-  .gallery-date  { font-size: 10px; color: #777; font-style: italic; }
+  .gallery-row {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap;
+  }
+  .gallery-stats {
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+    font-size: 11px; color: #333;
+    text-decoration: none;
+  }
+  .upvote-btn {
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+    font-size: 11px; color: #000;
+    background: var(--face);
+    border: 2px solid; border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    padding: 1px 7px 2px;
+    cursor: pointer;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .upvote-btn:hover { background: var(--face-lt); }
+  .upvote-btn:active,
+  .upvote-btn.voted {
+    border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk);
+  }
+  .upvote-btn.voted { color: #555; cursor: default; }
+  .upvote-btn[disabled] { opacity: 0.7; cursor: wait; }
   .gallery-pagination {
-    text-align: center; margin: 24px 0 8px;
+    text-align: center; margin: 20px 0 8px;
     font-family: "MS Sans Serif", sans-serif; font-size: 11pt;
   }
   .gallery-pagination a {
@@ -453,6 +525,125 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
     <div class="menu-item"><span class="acc">H</span>elp</div>
   </div>
   <div class="toolbar">
+    <div class="tbtn" title="New">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <path d="M4 2 h10 l4 4 v14 h-14 z" fill="white" stroke="black"/>
+          <path d="M14 2 v4 h4" fill="none" stroke="black"/>
+        </svg>
+      </div>
+      <div class="lbl">New</div>
+    </div>
+    <div class="tbtn" title="Open">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <path d="M2 6 h7 l2 2 h9 v10 h-18 z" fill="#ffcc66" stroke="black"/>
+          <path d="M2 6 h7 l2 2 h9" fill="none" stroke="black"/>
+        </svg>
+      </div>
+      <div class="lbl">Open</div>
+    </div>
+    <div class="tbtn" title="Save">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="3" y="3" width="16" height="16" fill="#4060a0" stroke="black"/>
+          <rect x="6" y="3" width="10" height="6" fill="white" stroke="black"/>
+          <rect x="7" y="12" width="8" height="7" fill="#dfdfdf" stroke="black"/>
+          <rect x="13" y="4" width="2" height="4" fill="black"/>
+        </svg>
+      </div>
+      <div class="lbl">Save</div>
+    </div>
+    <div class="tbtn" title="Publish">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <circle cx="11" cy="11" r="8" fill="#4080d0" stroke="black"/>
+          <path d="M3 11 h16 M11 3 a 10 8 0 0 1 0 16 a 10 8 0 0 1 0 -16 M11 3 v16" fill="none" stroke="white" stroke-width="0.8"/>
+        </svg>
+      </div>
+      <div class="lbl">Publish</div>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tbtn" title="Preview">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="2" y="3" width="18" height="13" fill="#dfdfdf" stroke="black"/>
+          <rect x="3" y="4" width="16" height="11" fill="white"/>
+          <path d="M8 18 h6 M11 16 v2" stroke="black"/>
+          <path d="M6 7 h10 M6 9 h10 M6 11 h6" stroke="#888"/>
+        </svg>
+      </div>
+      <div class="lbl">Preview</div>
+    </div>
+    <div class="tbtn" title="Source">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="2" y="3" width="18" height="16" fill="white" stroke="black"/>
+          <text x="11" y="14" text-anchor="middle" font-family="Courier" font-size="9" fill="black">&lt;/&gt;</text>
+        </svg>
+      </div>
+      <div class="lbl">Source</div>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tbtn" title="Link">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <path d="M5 11 a4 4 0 0 1 4 -4 h2 M17 11 a4 4 0 0 1 -4 4 h-2" fill="none" stroke="black" stroke-width="2"/>
+          <path d="M8 11 h6" stroke="black" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="lbl">Link</div>
+    </div>
+    <div class="tbtn" title="Anchor">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <circle cx="11" cy="6" r="2" fill="none" stroke="black" stroke-width="1.5"/>
+          <path d="M11 8 v10 M7 18 h8 M5 14 a6 4 0 0 0 12 0" fill="none" stroke="black" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="lbl">Anchor</div>
+    </div>
+    <div class="tbtn" title="Image">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="2" y="3" width="18" height="16" fill="white" stroke="black"/>
+          <circle cx="7" cy="8" r="2" fill="#ffcc00"/>
+          <path d="M2 16 l5 -5 l4 4 l3 -3 l6 6 z" fill="#66aa44"/>
+        </svg>
+      </div>
+      <div class="lbl">Image</div>
+    </div>
+    <div class="tbtn" title="Horizontal Line">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <line x1="2" y1="11" x2="20" y2="11" stroke="black" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="lbl">H. Line</div>
+    </div>
+    <div class="tbtn" title="Table">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="2" y="4" width="18" height="14" fill="white" stroke="black"/>
+          <line x1="2" y1="9" x2="20" y2="9" stroke="black"/>
+          <line x1="2" y1="13.5" x2="20" y2="13.5" stroke="black"/>
+          <line x1="8" y1="4" x2="8" y2="18" stroke="black"/>
+          <line x1="14" y1="4" x2="14" y2="18" stroke="black"/>
+        </svg>
+      </div>
+      <div class="lbl">Table</div>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tbtn" title="Spelling">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <text x="2" y="14" font-family="Times" font-size="11" font-weight="bold" fill="black">ABC</text>
+          <path d="M2 16 q3 -2 6 0 t6 0" stroke="red" fill="none" stroke-width="1"/>
+        </svg>
+      </div>
+      <div class="lbl">Spelling</div>
+    </div>
+    <div class="tb-sep"></div>
     <a href="/" style="text-decoration:none;color:inherit;display:flex;">
       <div class="tbtn ai-btn" title="Open AI Composer">
         <div class="icon">
@@ -465,6 +656,31 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
         <div class="lbl">AI Composer</div>
       </div>
     </a>
+  </div>
+  <div class="format-bar">
+    <select title="Paragraph style" disabled>
+      <option>Normal</option>
+    </select>
+    <select title="Font" disabled>
+      <option>Variable Width</option>
+    </select>
+    <select title="Font size" disabled>
+      <option>Medium</option>
+    </select>
+    <input type="color" value="#000000" title="Text color" disabled>
+    <button class="fbtn b" title="Bold" disabled>B</button>
+    <button class="fbtn i" title="Italic" disabled>I</button>
+    <button class="fbtn u" title="Underline" disabled>U</button>
+    <button class="fbtn" title="Strikethrough" disabled><s>S</s></button>
+    <span class="tb-sep" style="height:18px"></span>
+    <button class="fbtn" title="Bulleted list" disabled>&bull;&equiv;</button>
+    <button class="fbtn" title="Numbered list" disabled>1.</button>
+    <button class="fbtn" title="Decrease indent" disabled>&#8676;</button>
+    <button class="fbtn" title="Increase indent" disabled>&#8677;</button>
+    <span class="tb-sep" style="height:18px"></span>
+    <button class="fbtn" title="Align left" disabled>&#9001;&equiv;</button>
+    <button class="fbtn" title="Center" disabled>&equiv;</button>
+    <button class="fbtn" title="Align right" disabled>&equiv;&#9002;</button>
   </div>
   <div class="workspace">
     <div class="edit-frame">
@@ -488,6 +704,41 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
       String(d.getMinutes()).padStart(2,'0');
   }
   setInterval(tickClock, 1000); tickClock();
+
+  // Upvote wiring. Optimistic increment; on server confirmation we
+  // replace with the authoritative count (handles already-voted and
+  // races with other voters). Button locks into a "voted" state on
+  // success or already_voted so a double-click can't re-trigger.
+  document.addEventListener('click', async function (ev) {
+    const btn = ev.target.closest('.upvote-btn');
+    if (!btn || btn.classList.contains('voted') || btn.disabled) return;
+    ev.preventDefault();
+    const slug = btn.getAttribute('data-slug');
+    if (!slug) return;
+    btn.disabled = true;
+    const countEl = document.querySelector('.vote-count[data-slug="' + slug + '"]');
+    try {
+      const resp = await fetch('/api/vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: slug })
+      });
+      const j = await resp.json().catch(function () { return {}; });
+      if (resp.ok && typeof j.upvotes === 'number' && countEl) {
+        countEl.textContent = formatVoteCount(j.upvotes);
+      }
+      btn.classList.add('voted');
+      if (window.gtag) {
+        try { gtag('event', j.already_voted ? 'gallery_upvote_dup' : 'gallery_upvote', { slug: slug }); } catch (_) {}
+      }
+    } catch (_) {
+      btn.disabled = false;
+    }
+  });
+  function formatVoteCount(n) {
+    n = Number(n) || 0;
+    return n < 1000 ? String(n) : n.toLocaleString('en-US');
+  }
 </script>
 </body>
 </html>`;

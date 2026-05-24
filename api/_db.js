@@ -152,6 +152,36 @@ export async function completePageRow({
   );
 }
 
+// ============================================================
+// Upvotes — atomic $inc on the generations row, scoped to public AI
+// pages so a vote can't resurrect a hidden/non-gallery row. Returns the
+// post-increment count, or null if the slug doesn't match a votable row.
+// Dedupe (one vote per IP per slug) lives in _shared.js#recordVote.
+// ============================================================
+export async function incrementUpvote(slug) {
+  if (!slug) return null;
+  const d = await getDb();
+  const result = await d.collection('generations').findOneAndUpdate(
+    { share_slug: String(slug), source: 'ai', is_public: { $ne: false } },
+    { $inc: { upvotes: 1 } },
+    { returnDocument: 'after', projection: { upvotes: 1, _id: 0 } }
+  );
+  // Driver shape differs across versions: v4+ returns the doc directly,
+  // v3 returns { value: doc }. Cover both.
+  const doc = (result && result.value) ? result.value : result;
+  return doc ? (doc.upvotes || 0) : null;
+}
+
+export async function getUpvoteCount(slug) {
+  if (!slug) return 0;
+  const d = await getDb();
+  const doc = await d.collection('generations').findOne(
+    { share_slug: String(slug) },
+    { projection: { upvotes: 1, _id: 0 } }
+  );
+  return doc ? (doc.upvotes || 0) : 0;
+}
+
 function hashIp(ip) {
   return crypto.createHash('sha256').update(IP_SALT + String(ip)).digest('hex').slice(0, 16);
 }
