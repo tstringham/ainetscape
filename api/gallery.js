@@ -523,6 +523,7 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
     <div class="menu-item">F<span class="acc">o</span>rmat</div>
     <div class="menu-item"><span class="acc">T</span>ools</div>
     <div class="menu-item"><span class="acc">H</span>elp</div>
+    <a class="menu-item" href="/gallery" style="text-decoration:none;color:inherit;"><span class="acc">G</span>allery</a>
   </div>
   <div class="toolbar">
     <div class="tbtn" title="New">
