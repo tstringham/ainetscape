@@ -41,7 +41,10 @@
     "api/generate.js": {
       "maxDuration": 300
     },
-    "api/page/[slug].js": {
+    "api/page/[slug]/index.js": {
+      "maxDuration": 10
+    },
+    "api/page/[slug]/stats.js": {
       "maxDuration": 10
     },
     "api/gallery.js": {

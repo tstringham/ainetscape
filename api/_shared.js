@@ -155,6 +155,42 @@ export async function rateLimit(ip, kind = 'gen', {
 }
 
 // ============================================================
+// One-hit-per-IP-per-slug-per-day dedupe. Returns true if this is a
+// fresh hit (and records it), false if the IP already viewed this
+// slug today. The window resets at the TTL boundary, not midnight —
+// matches the spirit of "one increment per visit, not one per
+// refresh-spam" without needing a wall-clock cron.
+// ============================================================
+const HIT_TTL_SECONDS = 60 * 60 * 24;
+const memHits = new Map();
+
+export async function recordHit(ip, slug) {
+  const ipHash = crypto.createHash('sha256')
+    .update((process.env.IP_HASH_SALT || 'ainetscape-default-salt-change-me') + String(ip))
+    .digest('hex').slice(0, 16);
+  const key = `hit:${ipHash}:${slug}`;
+  const redis = getRedis();
+  if (!redis) {
+    const last = memHits.get(key);
+    if (last && (Date.now() - last) < HIT_TTL_SECONDS * 1000) return false;
+    memHits.set(key, Date.now());
+    // Cheap LRU sweep so a long-running instance doesn't grow unbounded.
+    if (memHits.size > 4000) {
+      const cutoff = Date.now() - HIT_TTL_SECONDS * 1000;
+      for (const [k, t] of memHits) if (t < cutoff) memHits.delete(k);
+    }
+    return true;
+  }
+  try {
+    const ok = await redis.set(key, '1', { nx: true, ex: HIT_TTL_SECONDS });
+    return ok === 'OK';
+  } catch (err) {
+    console.error('Hit dedupe Redis failed — counting the hit:', err);
+    return true;
+  }
+}
+
+// ============================================================
 // One-vote-per-IP-per-slug dedupe. Returns true if this is a fresh vote
 // (and records it), false if the IP has already voted on this slug.
 // Backed by Redis SETNX with a 30-day TTL when Upstash is configured;

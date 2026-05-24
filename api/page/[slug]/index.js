@@ -114,7 +114,7 @@ function decorate(html, slug, doc) {
   //     pages fall here.
   const isArtifact = !!(doc && doc.source === 'ai' && doc.is_public !== false);
   const badge = isArtifact
-    ? renderArtifactCluster(slug, doc)
+    ? renderArtifactCluster(slug)
     : renderPlatformCluster();
 
   let out = html;
@@ -136,23 +136,18 @@ function decorate(html, slug, doc) {
 // Left attributes the page back to AI Netscape and invites to Top
 // Sites (the same /gallery, framed for a visitor-from-share);
 // right surfaces upvote / votes / hits / share / report so the
-// visitor can engage with the artifact in front of them. The SOTW
-// badge sits inline at the start of the right cluster when this
-// row currently holds the site_of_the_week field.
+// visitor can engage with the artifact in front of them.
 //
-// Interaction wiring lives in /artifact-cluster.js (cached once
-// per origin); this file only emits the structural HTML.
+// Right cluster is rendered as a SKELETON — vote/hit counts and the
+// SOTW flag aren't in the cached HTML body. artifact-cluster.js
+// hydrates them on load via GET /api/page/[slug]/stats, so the body
+// stays immutable (24h edge cache) while counts and the SOTW state
+// stay fresh on every view. Interaction wiring also lives in
+// artifact-cluster.js (upvote / share / report); share dialog
+// delegates to the shared /share-dialog.js module (single source of
+// truth with the homepage editor's Share toolbar).
 // ============================================================
-function renderArtifactCluster(slug, doc) {
-  const upvotes = Number(doc && doc.upvotes) || 0;
-  const hits = Number(doc && doc.hits) || 0;
-  const isSotw = !!(doc && doc.site_of_the_week);
-  const sotwInline = isSotw
-    ? '<span style="color:#000080; font-weight:bold; letter-spacing:0.03em;">' +
-      '★ Site of the Week</span>' +
-      '<span style="color:#666;">·</span>'
-    : '';
-
+function renderArtifactCluster(slug) {
   // Container background pill — same period treatment as the
   // platform cluster (white wash, thin grey border).
   const pillBase =
@@ -170,34 +165,41 @@ function renderArtifactCluster(slug, doc) {
         'style="color:#000080;text-decoration:underline;">Top Sites</a>' +
     '</div>';
 
-  // Right cluster is interactive; data-artifact-cluster + data-slug
-  // are read by /artifact-cluster.js to wire up upvote / share /
-  // report. Inline styles keep this self-contained inside the
-  // injected AI page so we never depend on the page author's CSS.
   const upvoteBtnCss =
     'font:11px \'MS Sans Serif\',Tahoma,sans-serif; color:#000; ' +
     'background:#c0c0c0; border:2px solid; ' +
     'border-color:#fff #404040 #404040 #fff; ' +
     'padding:1px 9px 2px; cursor:pointer; line-height:1.2;';
   const linkCss = 'color:#000080;text-decoration:underline;cursor:pointer;background:none;border:none;padding:0;font:inherit;';
+  // SOTW skeleton is hidden by default; the stats fetch reveals it
+  // when the row currently holds the site_of_the_week field.
+  const sotwSkeleton =
+    '<span data-sotw hidden>' +
+      '<span style="color:#000080; font-weight:bold; letter-spacing:0.03em;">' +
+        '&#9733; Site of the Week</span>' +
+      '<span style="color:#666; margin-left:8px;">&middot;</span>' +
+    '</span>';
   const right =
     '<div data-artifact-cluster data-slug="' + escapeAttr(slug) + '" ' +
       'style="' + pillBase + ' right:12px;">' +
-      sotwInline +
+      sotwSkeleton +
       '<button type="button" data-action="upvote" ' +
         'style="' + upvoteBtnCss + '" title="Cool vote">&#9650; Upvote</button>' +
-      '<span style="color:#333;">Votes: <span data-vote-count>' + escapeAttr(formatNum(upvotes)) + '</span></span>' +
-      '<span style="color:#333;">Hits: ' + escapeAttr(formatNum(hits)) + '</span>' +
+      '<span style="color:#333;">Votes: <span data-vote-count>&mdash;</span></span>' +
+      '<span style="color:#333;">Hits: <span data-hit-count>&mdash;</span></span>' +
       '<button type="button" data-action="share" style="' + linkCss + '">Share</button>' +
       '<button type="button" data-action="report" style="' + linkCss + '">Report</button>' +
     '</div>';
 
-  // /artifact-cluster.js is a small JS file in /public — Vercel
-  // serves it directly, not through this function, so it caches
-  // once per origin and reloads only when its hash changes.
-  const script = '<script src="https://ainetscape.com/artifact-cluster.js" defer></script>';
+  // share-dialog.js must load before artifact-cluster.js so
+  // window.AINetscape.shareDialog is defined when the Share handler
+  // runs. `defer` preserves document order, so the source order
+  // here is the load order.
+  const scripts =
+    '<script src="https://ainetscape.com/share-dialog.js" defer></script>' +
+    '<script src="https://ainetscape.com/artifact-cluster.js" defer></script>';
 
-  return left + right + script;
+  return left + right + scripts;
 }
 
 // ============================================================
@@ -223,11 +225,6 @@ function renderPlatformCluster() {
       '<span style="color:#666;margin:0 7px;">·</span>' +
       '<a href="https://ainetscape.com/faq"       style="color:#000080;text-decoration:underline;">FAQ</a>' +
     '</div>';
-}
-
-function formatNum(n) {
-  n = Number(n) || 0;
-  return n < 1000 ? String(n) : n.toLocaleString('en-US');
 }
 
 function escapeAttr(s) {

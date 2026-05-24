@@ -264,6 +264,33 @@ export async function getUpvoteCount(slug) {
   return doc ? (doc.upvotes || 0) : 0;
 }
 
+// ============================================================
+// Per-page stats — read for the JS-rendered /p/[slug] right
+// cluster (api/page/[slug]/stats.js fetches this on every page
+// load so the cached body can stay immutable while counts and
+// the SOTW flag stay fresh).
+// ============================================================
+export async function getPageStats(slug) {
+  if (!slug) return null;
+  const d = await getDb();
+  return d.collection('generations').findOne(
+    { share_slug: String(slug) },
+    { projection: { upvotes: 1, hits: 1, site_of_the_week: 1, source: 1, is_public: 1, _id: 0 } }
+  );
+}
+
+export async function incrementHit(slug) {
+  if (!slug) return null;
+  const d = await getDb();
+  const result = await d.collection('generations').findOneAndUpdate(
+    { share_slug: String(slug), source: 'ai', is_public: { $ne: false } },
+    { $inc: { hits: 1 } },
+    { returnDocument: 'after', projection: { hits: 1, _id: 0 } }
+  );
+  const doc = (result && result.value) ? result.value : result;
+  return doc ? (doc.hits || 0) : null;
+}
+
 function hashIp(ip) {
   return crypto.createHash('sha256').update(IP_SALT + String(ip)).digest('hex').slice(0, 16);
 }
