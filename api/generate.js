@@ -29,7 +29,8 @@
 
 import {
   getCallerIp, parseBody, rateLimit, rateLimitMessage,
-  makeCache, logEvent, makeShareSlug
+  makeCache, logEvent, makeShareSlug,
+  makeAuthorToken, hashAuthorToken
 } from './_shared.js';
 
 // Must match the PRIMARY provider in the waterfall table above.
@@ -148,7 +149,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const shareSlug = sharingEnabled ? makeShareSlug() : null;
+  const shareSlug   = sharingEnabled ? makeShareSlug()   : null;
+  // Fresh-only — never sent on cache hits, so only the original generator's
+  // browser ever sees the raw token. Subsequent viewers can't claim authorship.
+  const authorToken = sharingEnabled ? makeAuthorToken() : null;
 
   const startedAt = Date.now();
   let streamingStarted = false;
@@ -200,7 +204,8 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Accel-Buffering', 'no');
-    if (shareSlug) res.setHeader('X-AINetscape-Share-Slug', shareSlug);
+    if (shareSlug)   res.setHeader('X-AINetscape-Share-Slug',  shareSlug);
+    if (authorToken) res.setHeader('X-AINetscape-Author-Token', authorToken);
     res.status(200);
     streamingStarted = true;
 
@@ -280,9 +285,20 @@ export default async function handler(req, res) {
     // brief should get the same answer instantly.
     cache.set(cacheKey, cachePayload);
 
-    // Only record the share slug for actual successful builds, not refusals
-    // or partial disconnects — those shouldn't be publicly addressable.
+    // Only record the share slug + author hash for actual successful builds,
+    // not refusals or partial disconnects — those shouldn't be publicly
+    // addressable or claimable.
     const persistedSlug = (event === 'ai_generation_completed') ? shareSlug : null;
+    const persistedAuthorHash = (event === 'ai_generation_completed' && authorToken)
+      ? hashAuthorToken(authorToken) : null;
+
+    // Pull the <title> out of the generated HTML for the gallery card display
+    // (Phase 2). Avoids re-parsing body_html on every gallery query.
+    let pageTitle = null;
+    if (event === 'ai_generation_completed') {
+      const m = /<title>([\s\S]*?)<\/title>/i.exec(accumulated || '');
+      if (m) pageTitle = m[1].trim().slice(0, 200);
+    }
 
     // Must await: the share slug header has already been sent to the client,
     // so the Mongo row must be persisted before the function returns — Vercel
@@ -297,7 +313,13 @@ export default async function handler(req, res) {
       // Archive whatever the model emitted — full HTML on success, REFUSED
       // line on refusal, partial body if the client disconnected mid-stream.
       body_html: accumulated || null,
-      share_slug: persistedSlug
+      share_slug: persistedSlug,
+      // Gallery fields (Phase 1 — counters init at 0 in _db.js, is_public
+      // defaults true, source defaults 'ai'):
+      page_title: pageTitle,
+      author_token_hash: persistedAuthorHash,
+      source: 'ai',
+      is_public: true
     });
   } catch (err) {
     console.error('Handler error:', err);

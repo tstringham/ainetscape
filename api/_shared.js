@@ -22,6 +22,18 @@ export function makeShareSlug(len = 10) {
   return out;
 }
 
+// Author token — 32 hex chars (128 bits of entropy). Issued on fresh
+// generations so the original author can later prove authorship via the
+// cookie (Phase 5 verify-author endpoint). Unguessable; never reused.
+export function makeAuthorToken() {
+  return crypto.randomBytes(16).toString('hex');
+}
+// Server-side hash for storage. Unsalted SHA-256 — the input is already
+// 128 random bits, salt adds no protection vs precomputation.
+export function hashAuthorToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
 // ============================================================
 // IP + body extraction
 // ============================================================

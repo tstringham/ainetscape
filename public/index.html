@@ -2231,6 +2231,19 @@ async function generateWithAI(opts) {
     // when MONGODB_URI is wired, so this stays null when sharing is off).
     currentShareSlug = resp.headers.get('x-ainetscape-share-slug') || null;
 
+    // Phase 1 of the Gallery: server issues a 32-char author token for fresh
+    // generations (not cache hits). Drop it into a cookie keyed to the slug
+    // so a later Phase 5 verify-author endpoint can confirm authorship and
+    // unlock the public/private toggle on /p/<slug>. 1-year lifetime;
+    // SameSite=Lax so the cookie survives normal share-link clicks.
+    const authorToken = resp.headers.get('x-ainetscape-author-token');
+    if (authorToken && currentShareSlug) {
+      const secure = (location.protocol === 'https:') ? '; Secure' : '';
+      document.cookie =
+        'author-' + currentShareSlug + '=' + authorToken +
+        '; Path=/; Max-Age=31536000; SameSite=Lax' + secure;
+    }
+
     const reader = resp.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let text = '';

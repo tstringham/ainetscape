@@ -44,7 +44,10 @@ function hashIp(ip) {
 
 export async function logEvent({
   ip, event, kind, brief, data, ref, forceBuild, duration_ms,
-  referrer, user_agent, verdict, body_html, share_slug
+  referrer, user_agent, verdict, body_html, share_slug,
+  // Gallery fields — additive, backwards-compat. Older rows that lack
+  // these fields are treated as public-by-default in gallery queries.
+  page_title, author_token_hash, source, is_public
 }) {
   const d = await getDb();
   const doc = {
@@ -76,5 +79,20 @@ export async function logEvent({
     doc.body_size_bytes = doc.body_html.length;
   }
   if (share_slug) doc.share_slug = String(share_slug);
+
+  // ---- Gallery fields (Phase 1) ----
+  if (page_title) doc.page_title = String(page_title).slice(0, 200);
+  if (author_token_hash) doc.author_token_hash = String(author_token_hash);
+  // source discriminates AI generations (gallery-eligible) from a
+  // hypothetical future WYSIWYG-save flow (never appears in gallery).
+  doc.source = source || 'ai';
+  // isPublic defaults true on insert; the spec's "Make site public"
+  // checkbox in the share dialog defaults to checked. Author can later
+  // PATCH to false via the verify-author endpoint (Phase 5).
+  doc.is_public = (is_public === false) ? false : true;
+  // Counters initialized at 0; /api/vote and /api/hit (Phase 3) use $inc.
+  doc.upvotes = 0;
+  doc.hits = 0;
+
   await d.collection('generations').insertOne(doc);
 }
