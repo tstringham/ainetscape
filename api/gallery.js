@@ -128,7 +128,8 @@ function renderSiteOfTheWeek(p) {
     '<div class="sotw-header">&#9733; SITE OF THE WEEK</div>' +
     '<div class="sotw-body">' +
       '<a class="sotw-thumb" href="' + escapeAttr(href) + '" tabindex="-1" aria-hidden="true">' +
-        '<img src="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' +
+        '<img src="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
+          'onerror="this.parentNode.classList.add(\'thumb-failed\')">' +
       '</a>' +
       '<div class="sotw-info">' +
         '<a class="sotw-title" href="' + escapeAttr(href) + '" title="' + escapeAttr(title) + '">' +
@@ -166,7 +167,8 @@ function renderCard(p) {
   // /api/vote and refreshes its own count inline.
   return '<div class="gallery-card">' +
     '<a class="gallery-thumb" href="' + escapeAttr(href) + '" tabindex="-1" aria-hidden="true">' +
-      '<img src="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' +
+      '<img src="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
+        'onerror="this.parentNode.classList.add(\'thumb-failed\')">' +
     '</a>' +
     '<div class="gallery-meta">' +
       '<a class="gallery-title" href="' + escapeAttr(href) + '" title="' + escapeAttr(title) + '">' +
@@ -522,6 +524,27 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
     width: 100%; height: 100%;
     object-fit: cover; object-position: top center;
     display: block;
+  }
+  /* Fallback when the upstream screenshot service errors (commonly a
+     transient 502 from Microlink on freshly-generated pages). The img
+     onerror handler tags the parent; we hide the broken icon and show
+     a neutral period-correct tile in its place. */
+  .gallery-thumb.thumb-failed img,
+  .sotw-thumb.thumb-failed img { display: none; }
+  .gallery-thumb.thumb-failed,
+  .sotw-thumb.thumb-failed {
+    background:
+      repeating-linear-gradient(45deg, #e8e6df 0 8px, #ddd9cf 8px 16px);
+    position: relative;
+  }
+  .gallery-thumb.thumb-failed::after,
+  .sotw-thumb.thumb-failed::after {
+    content: "Preview unavailable";
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+    font-size: 10px; color: #666;
+    background: rgba(255, 255, 255, 0.55);
   }
   .gallery-meta {
     padding: 8px 10px 9px;
