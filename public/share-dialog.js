@@ -73,6 +73,7 @@
             btn('copy', 'Copy Link', true) +
             btn('email', 'Email', false) +
             (hasNative ? btn('native', 'Share…', false) : '') +
+            btn('preview', 'Preview', false) +
             btn('close', 'Close', false) +
           '</div>' +
         '</div>' +
@@ -87,6 +88,7 @@
     on(wrap, '[data-act="copy"]', () => copy(shareUrl, slug, onTrack));
     on(wrap, '[data-act="email"]', () => emailShare(shareUrl, slug, getTitle, onTrack));
     if (hasNative) on(wrap, '[data-act="native"]', () => nativeShare(shareUrl, slug, getTitle, onTrack));
+    on(wrap, '[data-act="preview"]', () => previewShare(shareUrl, slug, onTrack));
 
     const escListener = e => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', escListener);
@@ -146,6 +148,16 @@
     window.location.href = 'mailto:?subject=' + encodeURIComponent(p.subject) +
       '&body=' + encodeURIComponent(p.body);
     onTrack('share_email_opened', { slug: slug });
+  }
+
+  function previewShare(shareUrl, slug, onTrack) {
+    // Open the canonical /p/[slug] URL in a new tab so the author can
+    // see exactly what a shared visitor sees, then close the dialog so
+    // it's not in the way of the result. noopener/noreferrer keeps the
+    // preview tab from reaching back into this window.
+    window.open(shareUrl, '_blank', 'noopener,noreferrer');
+    onTrack('share_preview_opened', { slug: slug });
+    close();
   }
 
   function nativeShare(shareUrl, slug, getTitle, onTrack) {
