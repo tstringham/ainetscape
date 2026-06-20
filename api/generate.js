@@ -33,6 +33,13 @@ import {
   makeAuthorToken, hashAuthorToken,
   insertPagePlaceholder, completePageRow
 } from './_shared.js';
+import { postProcessPexels } from './_pexels.js';
+// Unsplash post-processor is retained as the standby failover. The
+// system prompt no longer teaches [UNSPLASH:...] so it usually does
+// nothing — but pages built before the Pexels cutover may still ship
+// with legacy placeholders, and we may temporarily flip back if Pexels
+// rate-limits cascade. Cheap insurance: the module short-circuits when
+// no [UNSPLASH:] tokens appear in the body.
 import { postProcessUnsplash } from './_unsplash.js';
 
 // Must match the PRIMARY provider in the waterfall table above.
@@ -64,20 +71,25 @@ OUTPUT FORMAT:
 - Mobile-first responsive. Test mentally at 375px, 768px, 1440px.
 
 IMAGERY DIRECTIVE:
-When you want to include a photograph in the page, emit an <img> tag using this special placeholder syntax: <img src="[UNSPLASH:descriptive query terms]" alt="descriptive alt text">. The query terms should specifically describe what the photo should depict.
+When you want to include a photograph in the page, emit an <img> tag with a data-pexels attribute holding a short search query. The server will replace each placeholder with a real photograph at render time. Syntax:
+
+  <img data-pexels="2-4 word photographic query" alt="descriptive alt text" width="..." height="..." style="...">
+
+Rules:
+- Use 2 to 4 words per query. Specific beats generic — "cozy ramen bar interior" beats "ramen", "minimal designer workspace morning light" beats "office".
+- 2 to 5 images maximum per page. Each <img> consumes a backend API call; one or two well-chosen photos beats five thin ones.
+- Always include alt text describing what the photo shows. Reuse this in the data-pexels query OR write a more specific query — both work.
+- You MAY include width, height, class, style, or other layout attrs alongside data-pexels. They will be preserved on the rendered <img>.
+- Do NOT write the src= attribute. Do NOT write a photo credit. Both are added by the server.
 
 Examples:
-- <img src="[UNSPLASH:vancouver street photography rain at night]" alt="Wet Vancouver street at night">
-- <img src="[UNSPLASH:luxury cosmetics flatlay marble surface]" alt="Cosmetics product flatlay">
-- <img src="[UNSPLASH:heineken beer bottle green glass]" alt="Heineken bottle">
+- <img data-pexels="vancouver street rain night" alt="Wet Vancouver street at night" style="width:100%;aspect-ratio:3/2;object-fit:cover;">
+- <img data-pexels="luxury cosmetics flatlay marble" alt="Cosmetics product flatlay" width="800" height="533">
+- <img data-pexels="cozy ramen bar interior" alt="Atmospheric ramen bar at night" class="hero-image">
 
-Be specific with query terms — generic queries like [UNSPLASH:business] return generic photos. Specific queries like [UNSPLASH:wooden desk laptop notebook morning light] return better-matched photos.
+Do NOT emit URLs for any other image service (picsum.photos, placeholder.com, source.unsplash.com, [UNSPLASH:...] tokens, AI-generated image services, etc.) — they return wrong/dead images or have been retired. The data-pexels syntax above is the ONLY supported way to include a photograph.
 
-The server will replace these placeholders with real Unsplash photos and add a small photo credit below each image. You do NOT need to write the photo credit — that gets added automatically.
-
-Do NOT use other image services (picsum.photos, placeholder.com, source.unsplash.com directly, etc.) — they return random unrelated images. Always use the [UNSPLASH:...] placeholder syntax for photographic imagery.
-
-For non-photographic visuals (icons, decorative elements, color blocks, abstract patterns), continue using CSS, SVG, and typography. Reserve Unsplash placeholders for actual photographs.
+For non-photographic visuals (icons, decorative elements, color blocks, abstract patterns, dividers), continue using CSS, SVG, and typography. Reserve data-pexels for actual photographs.
 
 INTERACTIVE ELEMENTS (non-negotiable):
 - Every clickable element MUST work without a backend. Use only:
@@ -329,20 +341,36 @@ export default async function handler(req, res) {
       event = 'ai_generation_completed';
     }
 
-    // Unsplash substitution runs ONLY on successful HTML output — refusals
+    // Image substitution runs ONLY on successful HTML output — refusals
     // are short literal strings, disconnects mean nobody's listening. If
-    // substitution throws (e.g. Mongo cache module fails to import), fall
-    // back to the unsubstituted HTML so the user still gets a page rather
-    // than a 500. Individual photo failures already degrade to CSS
-    // fallback blocks inside postProcessUnsplash.
+    // substitution throws (e.g. network blip resolving a query), fall back
+    // to the unsubstituted HTML so the user still gets a page rather than
+    // a 500. Individual photo failures already degrade to CSS fallback
+    // blocks inside the post-processor.
+    //
+    // Two-pass for the transition:
+    //   1. Pexels — primary, current pipeline. The system prompt teaches
+    //      <img data-pexels="query">; the resolver fans out to the Pexels
+    //      search API with per_page=15 random pick.
+    //   2. Unsplash — legacy / standby failover. Short-circuits when no
+    //      [UNSPLASH:...] tokens are present (the common case post-cutover).
+    //      Retained so older pages can still be retroactively repaired and
+    //      so we can flip the primary in a hurry if Pexels rate-limits us.
     let finalBody = accumulated;
-    if (event === 'ai_generation_completed' && accumulated.includes('[UNSPLASH:')) {
+    if (event === 'ai_generation_completed') {
       try {
-        finalBody = await postProcessUnsplash(accumulated);
+        finalBody = await postProcessPexels(finalBody);
       } catch (err) {
-        console.error('[unsplash] post-processing threw — sending unsubstituted',
-          'HTML to avoid losing the generation:', err && err.message);
-        finalBody = accumulated;
+        console.error('[pexels] post-processing threw — keeping the page',
+          'unsubstituted rather than losing the generation:', err && err.message);
+      }
+      if (finalBody.includes('[UNSPLASH:')) {
+        try {
+          finalBody = await postProcessUnsplash(finalBody);
+        } catch (err) {
+          console.error('[unsplash] legacy post-processing threw — leaving the',
+            'remaining placeholders inline:', err && err.message);
+        }
       }
     }
 
