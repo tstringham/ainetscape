@@ -80,6 +80,20 @@ content/{terms,privacy,copyright,faq}.md   Sources of truth for the legal/FAQ pa
 - `public/images/{blon,lisa-penz}/` are hand-uploaded folders. Purpose unclear — possibly retrofit targets for the admin edit tool. Ask Thomas before touching.
 - The Pexels migration (per brief) is planned but un-merged. See the WIP branch `wip/build-brief-2026-06-20` and project memory `project_ai_waterfall.md`.
 
+## In-flight on `wip/build-brief-2026-06-20`
+
+These pieces are merged on the WIP branch but await their counterpart UX/system-prompt work before they can flip to "live":
+
+- **B2 Pexels pipeline** (`api/_pexels.js`, SYSTEM_PROMPT IMAGERY DIRECTIVE) — needs `PEXELS_API_KEY` env var set in Vercel before deploy. Unsplash post-processor retained for legacy `[UNSPLASH:...]` pages and as a one-line failover flip if Pexels rate-limits cascade.
+
+- **B5 contact-form backend** (`api/contact-form.js`, `api/page/[slug]/set-contact-email.js`, `getContactRecipient`/`setContactRecipient` in `api/_db.js`) — ENDPOINTS ARE LIVE but currently unreachable from the flow because:
+  1. SYSTEM_PROMPT still tells the model "use `mailto:` only — NOT a backend form." Flipping this to allow `<form action="/api/contact-form">` is the trigger.
+  2. No client-side "Where should contact form submissions go?" dialog yet. Without it, `recipient_email` is never set and submissions return 409 ("not configured").
+  3. Requires `RESEND_API_KEY` env var + completed DNS auth (SPF/DKIM for `webmaster@ainetscape.com` via Resend dashboard).
+  Ship plan: build the recipient-email dialog → flip the SYSTEM_PROMPT → confirm DNS → deploy. All four steps need to land in the same release or the model will emit forms that 409 every submission.
+
+- **A10 Spelling modal** — audit is done by inspection (no dead clicks in current code; the Spelling stub is the only placeholder gag). Real modal needs Typo.js + Hunspell en-US (smaller en_US-large variant per Thomas's preference) vendored into `public/spell/`, with a faithful Netscape Composer "Check Spelling" modal (word-by-word, Suggestions list, Ignore / Ignore All / Change / Change All / Add / Done buttons).
+
 ## Helpful prior sessions
 
 Prior turn summaries + project notes live in `/Users/eljefe/.claude/projects/-Users-eljefe-Projects-ainetscape/memory/`. Read those before assuming anything about Thomas's preferences (terse output, parallel housekeeping streams, careful with expensive iteration, etc.).

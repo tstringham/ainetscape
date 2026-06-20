@@ -58,6 +58,12 @@
     },
     "api/site-stats/homepage.js": {
       "maxDuration": 10
+    },
+    "api/contact-form.js": {
+      "maxDuration": 10
+    },
+    "api/page/[slug]/set-contact-email.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [

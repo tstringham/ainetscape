@@ -434,6 +434,67 @@ export async function putUnsplashCacheEntry(keyHash, photo) {
   );
 }
 
+// ============================================================
+// Contact-form recipient lookup + write.
+//
+// A generated page may contain a <form action="/api/contact-form" ...>;
+// submissions there get emailed via Resend to the address the original
+// author registered after generation. Author identity is verified by the
+// author token issued in the X-AINetscape-Author-Token response header at
+// generation time (hashed server-side; see api/_shared.js#hashAuthorToken).
+//
+// Schema (additive on the generations row):
+//   recipient_email                       — string, validated as RFC5322-ish
+//   recipient_email_set_at                — Date
+//   author_token_hash                     — pre-existing; the auth check
+//
+// `getContactRecipient` returns enough for /api/contact-form to fan out
+// (recipient_email + page_title for the subject line). `setContactRecipient`
+// requires the caller to pass author_token_hash so we can match it against
+// the row — a slug without a matching author token can't register or change
+// the recipient.
+// ============================================================
+export async function getContactRecipient(slug) {
+  if (!slug) return null;
+  const d = await getDb();
+  const doc = await d.collection('generations').findOne(
+    {
+      share_slug: String(slug),
+      source: 'ai',
+      is_public: { $ne: false }
+    },
+    { projection: { recipient_email: 1, page_title: 1, _id: 0 } }
+  );
+  if (!doc) return null;
+  return {
+    recipient_email: doc.recipient_email || null,
+    page_title: doc.page_title || null
+  };
+}
+
+export async function setContactRecipient({ slug, author_token_hash, recipient_email }) {
+  if (!slug || !author_token_hash) {
+    return { ok: false, error: 'missing_slug_or_token' };
+  }
+  const d = await getDb();
+  const result = await d.collection('generations').updateOne(
+    {
+      share_slug: String(slug),
+      author_token_hash: String(author_token_hash)
+    },
+    {
+      $set: {
+        recipient_email: recipient_email ? String(recipient_email).slice(0, 200) : null,
+        recipient_email_set_at: new Date()
+      }
+    }
+  );
+  if (result.matchedCount === 0) {
+    return { ok: false, error: 'not_found_or_unauthorized' };
+  }
+  return { ok: true };
+}
+
 export async function logEvent({
   ip, event, kind, brief, data, ref, forceBuild, duration_ms,
   referrer, user_agent, verdict, body_html, share_slug,
