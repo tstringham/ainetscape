@@ -36,7 +36,18 @@
     .catch(() => { /* keep skeleton on failure */ });
 
   // ---------------- Upvote ----------------
+  // Vote state is held in sessionStorage so the button stays locked across
+  // refreshes within a session but resets when the browser session ends.
+  // (Server-side Redis SETNX still dedupes by IP; see api/_shared.js
+  // VOTE_TTL_SECONDS — that's the actual hard gate.)
   const upvoteBtn = cluster.querySelector('[data-action="upvote"]');
+  const voteSessionKey = 'upvoted:' + slug;
+  function sessionSay(key) { try { return sessionStorage.getItem(key); } catch (_) { return null; } }
+  function sessionMark(key) { try { sessionStorage.setItem(key, '1'); } catch (_) {} }
+
+  if (upvoteBtn && sessionSay(voteSessionKey)) {
+    upvoteBtn.classList.add('voted');
+  }
   if (upvoteBtn) {
     upvoteBtn.addEventListener('click', async function (ev) {
       ev.preventDefault();
@@ -53,6 +64,7 @@
           voteCount.textContent = formatCount(j.upvotes);
         }
         upvoteBtn.classList.add('voted');
+        sessionMark(voteSessionKey);
       } catch (_) {
         upvoteBtn.disabled = false;
       }

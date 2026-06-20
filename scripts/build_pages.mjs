@@ -26,17 +26,18 @@ const PAGES = [
   { slug: 'faq',       source: 'content/faq.md',       title: 'Frequently Asked Questions — AI Netscape' }
 ];
 
-// Today's date in Pacific time, "Month D, YYYY". Matches the format used
-// elsewhere on the site for "Last updated" lines.
+// Today's date in Pacific time, "Month D, 1997". Real month + day, but
+// the year is always locked to 1997 to maintain the site conceit (same
+// rule as the homepage "Last updated" stamp and the Gallery date formatter).
 function todayPT() {
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Los_Angeles',
     year: 'numeric', month: '2-digit', day: '2-digit'
   });
-  const [y, mo, d] = fmt.format(new Date()).split('-').map(Number);
+  const [, mo, d] = fmt.format(new Date()).split('-').map(Number);
   const MONTHS = ['January','February','March','April','May','June',
                   'July','August','September','October','November','December'];
-  return `${MONTHS[mo - 1]} ${d}, ${y}`;
+  return `${MONTHS[mo - 1]} ${d}, 1997`;
 }
 
 const DATE = todayPT();

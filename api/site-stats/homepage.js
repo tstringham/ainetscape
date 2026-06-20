@@ -8,9 +8,9 @@
 // Cache-Control: no-store. Caching this would freeze the counter; the
 // endpoint is cheap (one indexed Mongo lookup + one $inc when deduped).
 //
-// First-time bootstrap: the underlying siteStats row is seeded at 1042
+// First-time bootstrap: the underlying siteStats row is seeded at 420
 // in _db.js#incrementHomepageVisits when no doc exists yet, so a fresh
-// install reads 1042 on its first call (the seed IS the visit's count,
+// install reads 420 on its first call (the seed IS the visit's count,
 // not a +1 on top). See that helper for race-safety notes.
 
 import { getCallerIp, rateLimit, rateLimitMessage, recordHomepageVisit } from '../_shared.js';
@@ -24,7 +24,7 @@ export default async function handler(req, res) {
   // counter still shows something plausible in dev / preview envs.
   if (!process.env.MONGODB_URI) {
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ count: 1042 });
+    return res.status(200).json({ count: 420 });
   }
 
   const ip = getCallerIp(req);
@@ -58,6 +58,6 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     // Soft-degrade: return the seed so the visible counter stays
     // sane even if the DB is having a moment.
-    return res.status(200).json({ count: 1042 });
+    return res.status(200).json({ count: 420 });
   }
 }

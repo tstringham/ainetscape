@@ -107,6 +107,12 @@
     display: flex; align-items: center; justify-content: center; }
   .tbtn .lbl { font-size: 10px; }
   .tb-sep { width: 1px; margin: 2px 3px; background: var(--sh); border-right: 1px solid var(--hi); }
+  /* Static info pages aren't editable — toolbar reads disabled. AI
+     Composer stays active and opens the dialog on home. */
+  .tbtn:not(.ai-btn) {
+    opacity: 0.4;
+    pointer-events: none;
+  }
 
   .tbtn.ai-btn {
     background:
@@ -244,7 +250,7 @@
 
 <div class="window">
   <div class="titlebar">
-    <span class="title">AI Netscape: 1997's AI-Powered HTML Editor</span>
+    <a class="title" href="/" style="color:inherit;text-decoration:none;">AI Netscape: 1997's AI-Powered HTML Editor</a>
     <div class="titlebar-btns">
       <button class="titlebar-btn" title="Minimize">_</button>
       <button class="titlebar-btn" title="Maximize">▢</button>
@@ -282,7 +288,7 @@
     <div class="tb-sep"></div>
     <div class="tbtn"><div class="icon"><svg width="22" height="22" viewBox="0 0 22 22"><text x="2" y="14" font-family="Times" font-size="11" font-weight="bold" fill="black">ABC</text><path d="M2 16 q3 -2 6 0 t6 0" stroke="red" fill="none" stroke-width="1"/></svg></div><div class="lbl">Spelling</div></div>
     <div class="tb-sep"></div>
-    <a href="/" style="text-decoration:none;color:inherit;display:flex;">
+    <a href="/?ai=1" style="text-decoration:none;color:inherit;display:flex;">
       <div class="tbtn ai-btn" title="Open AI Composer">
         <div class="icon">
           <svg width="22" height="22" viewBox="0 0 22 22">
@@ -308,7 +314,7 @@
   <div class="statusbar">
     <div class="status-pane flex">Document: Done</div>
     <div class="status-pane status-links">
-      <a href="/gallery">Gallery</a><span class="sep">·</span><a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
+      <a href="/gallery">Top Sites</a><span class="sep">·</span><a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
     </div>
     <div class="status-modem" title="Connection speed"><span>28.8 kbps</span></div>
     <div class="status-pane" id="status-clock">--:--</div>

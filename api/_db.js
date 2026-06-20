@@ -43,6 +43,13 @@ async function getDb() {
       { site_of_the_week: 1 },
       { sparse: true, name: 'site_of_the_week_idx' }
     );
+    // Unsplash query → photo metadata cache. TTL expires entries 24h
+    // after write so we re-query Unsplash periodically (results shift
+    // as their catalog grows) without burning the API on hot queries.
+    await db.collection('unsplashCache').createIndex(
+      { cachedAt: 1 },
+      { expireAfterSeconds: 24 * 60 * 60, name: 'unsplash_ttl_idx' }
+    );
   } catch (_) { /* index may already exist; ignore */ }
   return db;
 }
@@ -71,22 +78,45 @@ const GALLERY_PROJECTION = {
   share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, _id: 0
 };
 
+// Three sort modes: 'recent' (latest first), 'week' (last 7 days by upvotes),
+// 'all' (lifetime by upvotes). Legacy 'upvotes' is treated as an alias for
+// 'all' so old shared URLs (?sort=upvotes) keep resolving.
+function galleryQueryFor(sort) {
+  const upvoteSort = { upvotes: -1, ts: -1 };
+  switch (String(sort || '').toLowerCase()) {
+    case 'week': {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      return {
+        filter: { ...GALLERY_FILTER, ts: { $gte: sevenDaysAgo } },
+        sortSpec: upvoteSort
+      };
+    }
+    case 'all':
+    case 'upvotes':
+      return { filter: GALLERY_FILTER, sortSpec: upvoteSort };
+    case 'recent':
+    default:
+      return { filter: GALLERY_FILTER, sortSpec: { ts: -1 } };
+  }
+}
+
 export async function findGalleryPages({ sort = 'recent', skip = 0, limit = 24 }) {
   const d = await getDb();
-  const sortSpec = (sort === 'upvotes')
-    ? { upvotes: -1, ts: -1 }
-    : { ts: -1 };
+  const { filter, sortSpec } = galleryQueryFor(sort);
   return d.collection('generations')
-    .find(GALLERY_FILTER, { projection: GALLERY_PROJECTION })
+    .find(filter, { projection: GALLERY_PROJECTION })
     .sort(sortSpec)
     .skip(Math.max(0, skip))
     .limit(Math.max(1, Math.min(100, limit)))
     .toArray();
 }
 
-export async function countGalleryPages() {
+// Sort-aware so the 'week' tab's pagination reflects just last-7-day rows
+// rather than the lifetime total.
+export async function countGalleryPages(sort = 'recent') {
   const d = await getDb();
-  return d.collection('generations').countDocuments(GALLERY_FILTER);
+  const { filter } = galleryQueryFor(sort);
+  return d.collection('generations').countDocuments(filter);
 }
 
 // ============================================================
@@ -156,6 +186,24 @@ export async function completePageRow({
     { share_slug: String(share_slug) },
     { $set: setFields }
   );
+}
+
+// Admin-only: overwrite body_html on an existing row. Used to retrofit
+// pages built before image support landed. Auth lives in the endpoint.
+export async function updatePageBody({ slug, body_html, page_title }) {
+  if (!slug || !body_html) throw new Error('updatePageBody requires slug and body_html');
+  const d = await getDb();
+  const setFields = {
+    body_html: String(body_html),
+    body_size_bytes: String(body_html).length,
+    edited_at: new Date()
+  };
+  if (page_title) setFields.page_title = String(page_title).slice(0, 200);
+  const r = await d.collection('generations').updateOne(
+    { share_slug: String(slug) },
+    { $set: setFields }
+  );
+  return (r.matchedCount || 0) > 0;
 }
 
 // ============================================================
@@ -297,13 +345,13 @@ export async function incrementHit(slug) {
 // siteStats holds one row per tracked surface; today only 'homepage'
 // exists. Doc shape: { _id: 'homepage', count: <int>, updatedAt: Date }.
 //
-// The seed value (1042) is loaded the first time the doc is touched,
+// The seed value (420) is loaded the first time the doc is touched,
 // so a fresh deployment starts with a plausible-looking count rather
 // than 1 — period sites all faked their counters at launch and so
 // do we. The seed itself counts as the first visit; subsequent
 // IP-deduped visits each $inc by 1.
 // ============================================================
-const HOMEPAGE_SEED = 1042;
+const HOMEPAGE_SEED = 420;
 
 export async function getHomepageVisitCount() {
   const d = await getDb();
@@ -358,6 +406,32 @@ export async function incrementHomepageVisits() {
 
 function hashIp(ip) {
   return crypto.createHash('sha256').update(IP_SALT + String(ip)).digest('hex').slice(0, 16);
+}
+
+// ============================================================
+// Unsplash query cache — see api/_unsplash.js for the consumer.
+// The collection stores { _id: <sha256 of normalized query>, url,
+// photographerName, photographerProfile, photoId, downloadLocation,
+// cachedAt }. cachedAt drives the 24h TTL index registered in getDb().
+// ============================================================
+export async function getUnsplashCacheEntry(keyHash) {
+  if (!keyHash) return null;
+  const d = await getDb();
+  const doc = await d.collection('unsplashCache').findOne(
+    { _id: String(keyHash) },
+    { projection: { _id: 0, cachedAt: 0 } }
+  );
+  return doc || null;
+}
+
+export async function putUnsplashCacheEntry(keyHash, photo) {
+  if (!keyHash || !photo || !photo.url) return;
+  const d = await getDb();
+  await d.collection('unsplashCache').updateOne(
+    { _id: String(keyHash) },
+    { $set: { ...photo, cachedAt: new Date() } },
+    { upsert: true }
+  );
 }
 
 export async function logEvent({

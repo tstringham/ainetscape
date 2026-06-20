@@ -156,6 +156,12 @@
     display: flex; align-items: center; justify-content: center; }
   .tbtn .lbl { font-size: 10px; }
   .tb-sep { width: 1px; margin: 2px 3px; background: var(--sh); border-right: 1px solid var(--hi); }
+  /* The 404 isn't an editor — toolbar reads disabled, AI Composer stays
+     active so users can recover into the dialog. */
+  .tbtn:not(.ai-btn) {
+    opacity: 0.4;
+    pointer-events: none;
+  }
 
   /* AI Composer button — same magenta/cyan + breathe animation as home.
      On the 404 page, clicking it navigates back to /?compose=<seed>. */
@@ -324,7 +330,7 @@
 
 <div class="window">
   <div class="titlebar">
-    <span class="title">AI Netscape: 1997's AI-Powered HTML Editor</span>
+    <a class="title" href="/" style="color:inherit;text-decoration:none;">AI Netscape: 1997's AI-Powered HTML Editor</a>
     <div class="titlebar-btns">
       <button class="titlebar-btn" title="Minimize">_</button>
       <button class="titlebar-btn" title="Maximize">▢</button>
@@ -393,7 +399,7 @@
     <div class="status-pane flex" id="status-msg">Document: Error 404</div>
     <div class="status-pane" id="status-tags">&lt;body&gt;</div>
     <div class="status-pane status-links">
-      <a href="/gallery">Gallery</a><span class="sep">·</span><a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
+      <a href="/gallery">Top Sites</a><span class="sep">·</span><a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
     </div>
     <div class="status-modem" title="Connection speed">
       <span>28.8 kbps</span><span id="modem-cta">— upgrade to 56k?</span>
@@ -502,9 +508,9 @@
     if (aiBtn) aiBtn.addEventListener('click', () => { window.location.href = href; });
   } else {
     // No usable slug — hide the recovery affordance entirely; the AI button
-    // still works, just lands on the home page with no brief seed.
+    // still works, lands on the home page with the dialog pre-opened.
     if (recovery) recovery.style.display = 'none';
-    if (aiBtn) aiBtn.addEventListener('click', () => { window.location.href = '/'; });
+    if (aiBtn) aiBtn.addEventListener('click', () => { window.location.href = '/?ai=1'; });
   }
 
   // ---- Status bar clock (decorative — matches home page behavior) ----

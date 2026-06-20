@@ -32,8 +32,8 @@
 <!-- Generated at build time — sets window.__LAST_UPDATED__ for the
      starter doc's "Last updated" line. Cheap to fetch, browser-cached.
      If the file is missing (rare) the static placeholder stays visible. -->
-<script src="/last-updated.js"></script>
-<script src="/share-dialog.js"></script>
+<script src="/last-updated.js" defer></script>
+<script src="/share-dialog.js" defer></script>
 
 <!-- GA4 bootstrap. Generated at build time from GA_MEASUREMENT_ID env
      var; stubs window.gtag to a no-op if analytics aren't enabled. -->
@@ -850,17 +850,104 @@
     #editor blink { animation: none; }
     .ai-progress-bar { transition: none; }
   }
+
+  /* ===== A9 window controls ===== */
+  /* Minimized: hide the main window, surface the Win95-style taskbar stub. */
+  body.win-minimized #main-window { display: none; }
+  body.win-minimized #taskbar-stub { display: inline-flex; }
+
+  /* Maximized: drop the teal margin + chrome shadow so the window fills the
+     viewport edge-to-edge ("framed vs maximized" per the A9 spec). */
+  body.win-maximized { background: #c0c0c0; }
+  body.win-maximized #main-window {
+    width: 100vw; max-width: none;
+    height: 100vh; max-height: none;
+    margin: 0; border: 0;
+    box-shadow: none;
+  }
+
+  /* Taskbar stub — sits along the bottom edge, mirrors the Win95 Start-bar
+     button geometry. Always rendered hidden via the [hidden] attribute and
+     only revealed when body.win-minimized is set. */
+  #taskbar-stub {
+    position: fixed; left: 0; bottom: 0; z-index: 2147483646;
+    display: none;          /* overridden by body.win-minimized */
+    align-items: center; gap: 6px;
+    height: 28px; margin: 0; padding: 0 12px 0 8px;
+    background: var(--face);
+    border-top: 1px solid var(--hi);
+    border-right: 1px solid var(--sh-dk);
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+    font-size: 11px; color: var(--text);
+    cursor: pointer; user-select: none;
+  }
+  #taskbar-stub[hidden] { display: none !important; }
+  #taskbar-stub:hover { background: var(--face-lt); }
+  #taskbar-stub:active {
+    border-top-color: var(--sh-dk);
+    background: var(--face);
+  }
+  .taskbar-stub-icon {
+    width: 16px; height: 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--face);
+    border: 1px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+  }
+  .taskbar-stub-label { font-weight: bold; }
+
+  /* "It is now safe to turn off your computer." Win95-shutdown plate. */
+  #safe-to-off {
+    position: fixed; inset: 0; z-index: 2147483647;
+    background: #000; color: #ff8800;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    font-family: "Courier New", "Lucida Console", monospace;
+    cursor: pointer;
+  }
+  #safe-to-off[hidden] { display: none !important; }
+  .safe-to-off-msg {
+    font-size: 22px; letter-spacing: 0.04em;
+    text-shadow: 0 0 6px rgba(255, 140, 0, 0.45);
+    max-width: 80vw;
+  }
+  .safe-to-off-hint {
+    margin-top: 24px; font-size: 11px; color: #c97600;
+  }
+  @media (max-width: 540px) {
+    .safe-to-off-msg { font-size: 16px; }
+  }
+
+  /* Odometer-style visitor counter — black panel, light digits, fixed-width
+     glyphs, inset bevel so it reads like a hardware counter on a mid-90s
+     hit-counter widget. Lives inline in the starter doc footer. */
+  .odometer {
+    display: inline-block;
+    background: #000;
+    color: #fffce8;
+    font-family: "Courier New", "Lucida Console", monospace;
+    font-weight: bold;
+    letter-spacing: 0.18em;
+    padding: 1px 5px 1px 6px;
+    border: 1px solid;
+    border-color: #555 #cfcfcf #cfcfcf #555;
+    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.7);
+    text-shadow: 0 0 2px rgba(255, 240, 160, 0.55);
+    vertical-align: baseline;
+    font-size: 11px;
+  }
 </style>
 </head>
 <body>
 
 <div class="window" id="main-window">
   <div class="titlebar">
-    <span class="title">AI Netscape: 1997's AI-Powered HTML Editor</span>
+    <a class="title" href="/" style="color:inherit;text-decoration:none;">AI Netscape: 1997's AI-Powered HTML Editor</a>
     <div class="titlebar-btns">
-      <button class="titlebar-btn" title="Minimize">_</button>
-      <button class="titlebar-btn" title="Maximize">▢</button>
-      <button class="titlebar-btn" title="Close">✕</button>
+      <button class="titlebar-btn" title="Minimize" data-window-action="minimize">_</button>
+      <button class="titlebar-btn" title="Maximize" data-window-action="maximize">▢</button>
+      <button class="titlebar-btn" title="Close"    data-window-action="close">✕</button>
     </div>
   </div>
 
@@ -878,7 +965,7 @@
     <div class="menu-item" data-menu="Communicator"><span class="acc">C</span>ommunicator</div>
     -->
     <div class="menu-item" data-menu="Help"><span class="acc">H</span>elp</div>
-    <a class="menu-item" href="/gallery" style="text-decoration:none;color:inherit;">Top <span class="acc">S</span>ites</a>
+    <a class="menu-item" href="/gallery" style="text-decoration:none;color:inherit;"><span class="acc">G</span>allery</a>
   </div>
 
   <!-- Main toolbar -->
@@ -1090,14 +1177,7 @@
           <h1><font color="#FF0000">Welcome</font> to <font color="#0000FF">My Home Page!</font></h1>
         </center>
         <hr noshade size="4">
-        <p>
-          <font face="Times New Roman" size="4">
-            This is my brand new web page, made with <b>AI Netscape</b>!
-            I am very excited to share my interests and hobbies with the
-            <font color="#008000"><i>World Wide Web</i></font>.
-          </font>
-        </p>
-        <p><font face="Times New Roman" size="4">This HTML page has a strong sense of <b>nostalgia</b> with a dash of <b>time travel</b>. Feel free to edit it, or let our <b>AI Composer&trade;</b> make another dev job redundant&mdash;even in 1997.</font></p>
+        <p><font face="Times New Roman" size="4">I built this page by hand, with my own two hands, learning HTML over one (1) entire weekend. It has since come to my attention that the <b>AI Composer&trade;</b> button does the same thing in about thirty (30) seconds. I am choosing not to think about this.</font></p>
         <h2><font color="#800080">My Interests</font></h2>
         <ul>
           <li><font size="3">Deep Thought 42</font></li>
@@ -1108,9 +1188,9 @@
         </ul>
         <hr>
         <center>
-          <p><font size="2"><i id="last-updated">Last updated: May 22, 2026</i></font></p>
+          <p><font size="2"><i id="last-updated">Last updated: May 22, 1997</i></font></p>
           <p><font size="2"><a href="mailto:webmaster@ainetscape.com">webmaster@ainetscape.com</a></font></p>
-          <p><font size="1" color="#808080">This page has been visited <b id="visitor-count">&mdash;</b> times.</font></p>
+          <p><font size="1" color="#808080">This page has been visited <span id="visitor-count" class="odometer">&mdash;</span> times.</font></p>
         </center>
       </div>
     </div>
@@ -1245,7 +1325,7 @@
       <div class="titlebar-btns"><button class="titlebar-btn" data-close-ai>✕</button></div>
     </div>
     <div class="dialog-body">
-      <div style="font-size:11px;">
+      <div id="ai-intro" style="font-size:11px;">
         Describe the website you would like the computer to build for you.
         AI Netscape will replace the current document with a complete,
         state-of-the-art HTML page generated by our AI Composer&trade; engine.
@@ -1254,12 +1334,7 @@
         <label style="padding-top:4px;">Prompt:</label>
         <textarea id="ai-prompt" placeholder="A landing page for a third-wave coffee roaster with a hero, menu, and newsletter signup..."></textarea>
       </div>
-      <div class="ai-examples">
-        <div class="ai-example" data-example="A landing page for a venture-backed AI startup called Lumen that builds memory for agents. Hero, three features, a customer logo wall, and a CTA.">Lumen AI startup</div>
-        <div class="ai-example" data-example="A personal portfolio for a designer named Mira Chen with a hero, six project cards, and a contact section. Editorial typography.">Designer portfolio</div>
-        <div class="ai-example" data-example="A pitch page for a SaaS that helps founders auto-apply to YC. Bold, opinionated typography. Hero with strong claim, problem, solution, pricing table.">YC SaaS pitch</div>
-        <div class="ai-example" data-example="A modern restaurant homepage for a Tokyo-inspired ramen bar. Atmospheric, dark, with menu, hours, and reservation CTA.">Ramen bar</div>
-      </div>
+      <div class="ai-examples" id="ai-examples"></div>
       <div class="ai-status" id="ai-status">Ready.</div>
     </div>
     <div class="dialog-footer">
@@ -1267,6 +1342,47 @@
       <button class="dlg-btn" id="ai-prompt-cancel">Cancel</button>
     </div>
   </div>
+</div>
+
+<!-- Disconnect confirmation (A9 close-button modal) -->
+<div class="modal-backdrop" id="dlg-disconnect">
+  <div class="dialog" style="width: 380px;">
+    <div class="titlebar">
+      <span class="title">Disconnect</span>
+      <div class="titlebar-btns"><button class="titlebar-btn" data-close>✕</button></div>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row">
+        <div style="font-size:24px; line-height:1; margin-right:6px;">?</div>
+        <div style="font-size:11px; line-height:1.55;">
+          Disconnect from the Information Superhighway?
+          <div style="margin-top:6px; color:#555;">Any unsaved bookmarks will remain.</div>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="dlg-btn default" id="disconnect-stay">Stay</button>
+      <button class="dlg-btn" id="disconnect-go">Disconnect</button>
+    </div>
+  </div>
+</div>
+
+<!-- Minimized taskbar stub. Hidden by default; shown when the Minimize
+     ( _ ) titlebar button is clicked. Clicking the stub restores the window. -->
+<button type="button" id="taskbar-stub" aria-label="Restore AI Netscape window" hidden>
+  <span class="taskbar-stub-icon" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 22 22">
+      <path d="M11 2 l2 6 l6 2 l-6 2 l-2 6 l-2 -6 l-6 -2 l6 -2 z" fill="white" stroke="black" stroke-width="0.8"/>
+    </svg>
+  </span>
+  <span class="taskbar-stub-label">AI Netscape</span>
+</button>
+
+<!-- "It is now safe to turn off your computer" full-viewport overlay.
+     Shown after Disconnect; click anywhere to restore. -->
+<div id="safe-to-off" hidden>
+  <div class="safe-to-off-msg">It is now safe to turn off your computer.</div>
+  <div class="safe-to-off-hint">(Click anywhere to reconnect.)</div>
 </div>
 
 <!-- Generic alert dialog (for fake "publish" etc) -->
@@ -1439,13 +1555,16 @@ function restoreSelection() {
 }
 
 // ---- Status clock ----
+// Live ticking — 1s cadence so the minute roll-over is visible.
+// Guarded so a missing #status-clock can't take down the rest of the init block.
 function tickClock() {
+  if (!statusClock) return;
   const d = new Date();
   statusClock.textContent =
-    String(d.getHours()).padStart(2,'0') + ':' +
-    String(d.getMinutes()).padStart(2,'0');
+    String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0');
 }
-setInterval(tickClock, 1000); tickClock();
+if (statusClock) { tickClock(); setInterval(tickClock, 1000); }
 
 // ---- Status: which tags surround the caret ----
 function updateTagPath() {
@@ -1534,7 +1653,7 @@ document.getElementById('main-toolbar').addEventListener('click', e => {
     case 'hline':   exec('insertHorizontalRule'); break;
     case 'table':   saveSelection(); openDialog('dlg-table'); break;
     case 'spell':   showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)'); break;
-    case 'ai':      openDialog('dlg-ai'); { const p = document.getElementById('ai-prompt'); if (p) p.focus(); } break;
+    case 'ai':      openAIDialog(); break;
     case 'share':   openShareDialog(); break;
   }
 });
@@ -2011,6 +2130,69 @@ function playModemSequence() {
   });
 }
 
+// ============================================================
+// A9 — window-control button behavior (minimize / maximize / close).
+// Non-destructive throughout: minimize stashes the window behind a
+// Win95-style taskbar stub, maximize toggles a class on <body>, close
+// shows a Disconnect modal that — on confirm — plays the modem hang-up
+// and surfaces the "It is now safe to turn off your computer" plate.
+// All three states are reversible from the UI; no work is ever lost.
+// ============================================================
+(function wireWindowControls() {
+  const body         = document.body;
+  const stub         = document.getElementById('taskbar-stub');
+  const dlg          = document.getElementById('dlg-disconnect');
+  const stayBtn      = document.getElementById('disconnect-stay');
+  const goBtn        = document.getElementById('disconnect-go');
+  const safeOff      = document.getElementById('safe-to-off');
+
+  function minimize() {
+    body.classList.add('win-minimized');
+    if (stub) stub.hidden = false;
+  }
+  function restoreFromMinimize() {
+    body.classList.remove('win-minimized');
+    if (stub) stub.hidden = true;
+  }
+  function toggleMaximize() {
+    body.classList.toggle('win-maximized');
+  }
+  function openDisconnect() {
+    if (dlg) dlg.classList.add('open');
+  }
+  function closeDisconnect() {
+    if (dlg) dlg.classList.remove('open');
+  }
+  function disconnectAndShutdown() {
+    closeDisconnect();
+    try { playDisconnect(true); } catch (_) {}
+    if (safeOff) safeOff.hidden = false;
+  }
+  function reconnect() {
+    if (safeOff) safeOff.hidden = true;
+  }
+
+  // Delegated handler for the three titlebar buttons — survives the
+  // dialog system stealing focus or rebuilding parts of the DOM.
+  document.addEventListener('click', function (ev) {
+    const btn = ev.target.closest('[data-window-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-window-action');
+    if (action === 'minimize')  { minimize(); }
+    else if (action === 'maximize') { toggleMaximize(); }
+    else if (action === 'close')    { openDisconnect(); }
+  });
+
+  if (stub)    stub.addEventListener('click', restoreFromMinimize);
+  if (stayBtn) stayBtn.addEventListener('click', closeDisconnect);
+  if (goBtn)   goBtn.addEventListener('click', disconnectAndShutdown);
+  if (safeOff) safeOff.addEventListener('click', reconnect);
+
+  // Click on the Disconnect dialog's [data-close] (titlebar ✕) is handled
+  // by the existing global data-close wiring further down — no duplicate
+  // handler needed here.
+})();
+
 // Pre-warm the AudioContext on the very first user interaction with the
 // page (button click, key press, touch). Without this, the context isn't
 // created until the user clicks Generate — meaning the audio system has
@@ -2104,13 +2286,78 @@ function setAIStatus(msg) {
   if (s) s.textContent = msg;
 }
 
-function wireAIPromptMode() {
+// 12-prompt pool — 4 are sampled at random each time the AI dialog opens.
+// 5-8 are Silicon Valley-aimed; 7-8 are deliberate nods to specific essay
+// titles. Keep both — these are load-bearing easter eggs.
+const EXAMPLE_PROMPTS = [
+  { label: 'Lumen AI startup',                     prompt: 'A landing page for a venture-backed AI startup called Lumen that builds memory for agents. Hero, three features, a customer logo wall, and a CTA.' },
+  { label: 'Designer portfolio',                   prompt: 'A personal portfolio for a designer named Mira Chen with a hero, six project cards, and a contact section. Editorial typography.' },
+  { label: 'YC SaaS pitch',                        prompt: 'A pitch page for a SaaS that helps founders auto-apply to YC. Bold, opinionated typography. Hero with strong claim, problem, solution, pricing table.' },
+  { label: 'Ramen bar',                            prompt: 'A modern restaurant homepage for a Tokyo-inspired ramen bar. Atmospheric, dark, with menu, hours, and reservation CTA.' },
+  { label: 'Series A for a smart juicer',          prompt: 'A Series A pitch page for a smart juicer startup. Hero with bold claim, the problem with juice today, the solution, traction metrics, team bios, and the ask. Clean SaaS aesthetic.' },
+  { label: 'Seed round for "email, but AI"',       prompt: 'A seed-stage pitch page for an AI email assistant called Inbox.ai. Hero, problem statement, product demo placeholder, traction numbers, founding team, and a contact section.' },
+  { label: 'Manifesto: software is eating the world', prompt: 'A long-form essay manifesto titled "Software Is Eating the World." Editorial typography, drop caps, generous line height, pull quotes, signed by the author at the end.' },
+  { label: 'A page that says "It\'s Time to Build"', prompt: 'An essay-style manifesto with the title "It\'s Time to Build." Editorial layout, large hero title, body in serif, signed at the end with a call to action.' },
+  { label: '22 reasons Jack could\'ve fit on the door', prompt: 'A passionate fan blog post titled "22 Reasons Jack Could Have Fit on the Door." Numbered list with image placeholders, an outraged tone, and a comment section at the bottom.' },
+  { label: 'Memorial page for a Tamagotchi',       prompt: 'An in-memoriam page for a beloved Tamagotchi named Pixel. Tasteful headline, life-story paragraphs, photo gallery, and a guestbook for condolences.' },
+  { label: 'Petition to outlaw December',          prompt: 'A petition page demanding the abolition of the month of December. Hero with the demand, a list of grievances against December, a signature counter, and fields to add your name.' },
+  { label: 'My cat\'s law firm',                   prompt: 'A homepage for a law firm operated by a cat named Whiskers, Esq. Hero, three practice-area cards (estate planning, organized mischief, naptime advocacy), team bios, and a contact form.' }
+];
+
+// Fisher-Yates, then take 4. Fresh draw on every dialog open so the user
+// sees variety. (The full set is small enough that random duplicates
+// across opens are common and fine.)
+function pickRandomExamples(n) {
+  const a = EXAMPLE_PROMPTS.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, n);
+}
+
+function populateExampleChips() {
+  const host = document.getElementById('ai-examples');
+  if (!host) return;
   const promptEl = document.getElementById('ai-prompt');
-  aiDialog.querySelectorAll('.ai-example').forEach(el => {
+  host.innerHTML = '';
+  pickRandomExamples(4).forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'ai-example';
+    el.textContent = item.label;
+    el.dataset.example = item.prompt;
     el.addEventListener('click', () => {
-      if (promptEl) { promptEl.value = el.dataset.example; promptEl.focus(); }
+      if (promptEl) { promptEl.value = item.prompt; promptEl.focus(); }
     });
+    host.appendChild(el);
   });
+}
+
+// Single source of truth for opening the AI Composer dialog:
+//  - resamples 4 chips from the 12-prompt pool
+//  - prefills the textarea with the last submitted brief (B1: edit mode)
+//  - swaps the intro copy to edit-mode language when a prior prompt exists
+function openAIDialog() {
+  populateExampleChips();
+  const promptEl = document.getElementById('ai-prompt');
+  const intro    = document.getElementById('ai-intro');
+  const last     = lsGet('lastPrompt') || '';
+  if (promptEl) {
+    if (last && !promptEl.value) promptEl.value = last;
+  }
+  if (intro) {
+    intro.innerHTML = last
+      ? 'Refine your page. Edit the instructions below and AI Netscape will rebuild the document. Your previous prompt has been kept.'
+      : 'Describe the website you would like the computer to build for you. AI Netscape will replace the current document with a complete, state-of-the-art HTML page generated by our AI Composer&trade; engine.';
+  }
+  openDialog('dlg-ai');
+  if (promptEl) promptEl.focus();
+}
+
+function wireAIPromptMode() {
+  // Chip click handlers are now attached in populateExampleChips() since
+  // the chip DOM is rebuilt on every open. This function still wires the
+  // Generate / Cancel buttons, which live outside the chip container.
   const go = document.getElementById('ai-go');
   if (go) go.addEventListener('click', () => generateWithAI());
   const cancel = document.getElementById('ai-prompt-cancel');
@@ -2120,8 +2367,12 @@ function resetAIDialogToPrompt() {
   aiDialogBody.innerHTML = AI_BODY_HTML;
   aiDialogFooter.innerHTML = AI_FOOTER_HTML;
   wireAIPromptMode();
+  // The reset snapshot has an empty chip container; refill it so the
+  // user sees example chips again after an error / cancel reflow.
+  populateExampleChips();
 }
 wireAIPromptMode();
+populateExampleChips();
 
 // Static titlebar close (✕) for the AI dialog.
 document.querySelectorAll('[data-close-ai]').forEach(el =>
@@ -2147,9 +2398,11 @@ document.querySelectorAll('[data-close-ai]').forEach(el =>
       setTimeout(() => {
         const promptEl = document.getElementById('ai-prompt');
         if (!promptEl) return;
+        // ?compose= wins over any persisted lastPrompt — set the value
+        // BEFORE opening so openAIDialog() sees a non-empty textarea
+        // and skips the prefill / edit-mode intro swap.
         promptEl.value = compose;
-        openDialog('dlg-ai');
-        promptEl.focus();
+        openAIDialog();
         try { promptEl.setSelectionRange(promptEl.value.length, promptEl.value.length); }
         catch (_) {}
         trackEvent('compose_from_404', { brief_length: compose.length });
@@ -2158,9 +2411,7 @@ document.querySelectorAll('[data-close-ai]').forEach(el =>
     }
     if (params.get('ai') === '1') {
       setTimeout(() => {
-        const promptEl = document.getElementById('ai-prompt');
-        openDialog('dlg-ai');
-        if (promptEl) promptEl.focus();
+        openAIDialog();
         trackEvent('ai_dialog_opened_from_param');
       }, 200);
     }
@@ -2302,6 +2553,9 @@ async function generateWithAI(opts) {
     setAIStatus('That brief is longer than a 28.8 kbps line can carry (6,000 character maximum). Please shorten it.');
     return;
   }
+
+  // Persist for B1 edit-mode prefill on next dialog open.
+  lsSet('lastPrompt', userBrief);
 
   aiInFlight = true;
   abortReason = null;
@@ -3279,7 +3533,7 @@ const MENUS = {
   ],
   Tools: [
     { label: 'Check Spelling...', acc: 'S', action: () => showAlert('Spelling', 'Spell check complete. No errors found.\n\nYour document has been certified spell-correct by the AI Netscape Quality Assurance team.') },
-    { label: 'AI Composer...',     acc: 'A', action: () => { openDialog('dlg-ai'); const p = document.getElementById('ai-prompt'); if (p) p.focus(); } },
+    { label: 'AI Composer...',     acc: 'A', action: () => openAIDialog() },
     { type: 'separator' },
     { label: 'Word Count',         acc: 'W', action: () => showWordCount() },
     { label: 'Document Information', acc: 'I', action: () => showDocInfo() },
@@ -3290,7 +3544,7 @@ const MENUS = {
   Help: [
     { label: 'Help Contents',         acc: 'C', shortcut: 'F1', action: () => helpContentsDialog() },
     { type: 'separator' },
-    { label: 'Release Notes',         acc: 'R', action: () => showAlert('Release Notes', 'AI Netscape 4.7 — May 22, 2026\n\n• New: AI Composer engine.\n• New: 56k v.90 modem upgrade pathway.\n• Fixed: dialog font rendering on high-resolution displays (1024x768+).\n• Known issue: Java applets require version 1.1 plug-in (not yet bundled).') },
+    { label: 'Release Notes',         acc: 'R', action: () => showAlert('Release Notes', 'AI Netscape 4.7 — May 22, 1997\n\n• New: AI Composer engine.\n• New: 56k v.90 modem upgrade pathway.\n• Fixed: dialog font rendering on high-resolution displays (1024x768+).\n• Known issue: Java applets require version 1.1 plug-in (not yet bundled).') },
     { label: 'What\'s New',           acc: 'N', action: () => showAlert('What\'s New', 'The AI Composer is here.\n\nDescribe what you want, and AI Netscape will assemble a complete HTML page using our proprietary engine. Best results at 56k v.90.') },
     { type: 'separator' },
     { label: 'Software Updates...',   acc: 'U', action: () => showAlert('Software Updates', 'Checking for updates...\n\nYou are running the most recent version of AI Netscape (4.7).\n\nNext scheduled check: 02/14/1998.') },

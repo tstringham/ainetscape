@@ -117,6 +117,15 @@ function decorate(html, slug, doc) {
     ? renderArtifactCluster(slug)
     : renderPlatformCluster();
 
+  // GA4 page_view tracking for /p/[slug]. ga.js is built at deploy time:
+  // a real bootstrap when GA_MEASUREMENT_ID is set, or a `window.gtag`
+  // no-op stub when it isn't. Loaded with defer so it executes before
+  // artifact-cluster.js (document order is execution order under defer),
+  // which lets the cluster's share / upvote / report events actually
+  // reach GA instead of being swallowed by its try/catch.
+  const gaScript = '<script src="https://ainetscape.com/ga.js" defer></script>';
+  const tail = gaScript + badge;
+
   let out = html;
   if (/<\/head>/i.test(out)) {
     out = out.replace(/<\/head>/i, ogTags + '</head>');
@@ -124,9 +133,9 @@ function decorate(html, slug, doc) {
     out = out.replace(/<head[^>]*>/i, m => m + ogTags);
   }
   if (/<\/body>/i.test(out)) {
-    out = out.replace(/<\/body>/i, badge + '</body>');
+    out = out.replace(/<\/body>/i, tail + '</body>');
   } else {
-    out += badge;
+    out += tail;
   }
   return out;
 }
@@ -217,7 +226,7 @@ function renderPlatformCluster() {
     'font:10px \'MS Sans Serif\',Tahoma,sans-serif; line-height:1.5; ' +
     'background:rgba(255,255,255,0.9); padding:4px 10px; ' +
     'border:1px solid #888;">' +
-      '<a href="https://ainetscape.com/gallery"   style="color:#000080;text-decoration:underline;">Gallery</a>' +
+      '<a href="https://ainetscape.com/gallery"   style="color:#000080;text-decoration:underline;">Top Sites</a>' +
       '<span style="color:#666;margin:0 7px;">·</span>' +
       '<a href="https://ainetscape.com/terms"     style="color:#000080;text-decoration:underline;">Terms</a>' +
       '<span style="color:#666;margin:0 7px;">·</span>' +

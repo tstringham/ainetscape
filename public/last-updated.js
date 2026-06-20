@@ -8,7 +8,7 @@
 //      forward daily without any redeploy.
 //
 //   2. The "This page has been visited N times" line. Fetched from
-//      /api/site-stats/homepage, which seeds the counter at 1042 on
+//      /api/site-stats/homepage, which seeds the counter at 420 on
 //      first call and increments per-IP/day-deduped on subsequent
 //      visits. Zero-padded to 5 digits up to 99999, then 6.
 //

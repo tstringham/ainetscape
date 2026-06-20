@@ -43,8 +43,12 @@ export default async function handler(req, res) {
   }
 
   // Coerce query inputs. Sort defaults to recent. Page clamps to ≥ 1.
-  const sort = (String(req.query.sort || '').toLowerCase() === 'upvotes')
-    ? 'upvotes' : 'recent';
+  // Three sort modes are supported; legacy ?sort=upvotes maps onto 'all'
+  // so old shared URLs keep resolving.
+  const rawSort = String(req.query.sort || '').toLowerCase();
+  let sort = 'recent';
+  if (rawSort === 'week') sort = 'week';
+  else if (rawSort === 'all' || rawSort === 'upvotes') sort = 'all';
   let page = parseInt(req.query.page, 10);
   if (!Number.isFinite(page) || page < 1) page = 1;
   page = Math.min(page, 10000);     // sanity cap
@@ -55,8 +59,10 @@ export default async function handler(req, res) {
     } = await import('./_db.js');
     const [pages, total, sotw] = await Promise.all([
       findGalleryPages({ sort, skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
-      countGalleryPages(),
-      // Only show the feature box on page 1 of either sort — flipping
+      // countGalleryPages needs the sort too — 'week' has a time filter
+      // that changes the total row count for pagination math.
+      countGalleryPages(sort),
+      // Only show the feature box on page 1 of any sort — flipping
       // through page 5 of an old archive shouldn't keep restating it.
       page === 1 ? findCurrentSiteOfTheWeek() : Promise.resolve(null)
     ]);
@@ -89,7 +95,7 @@ function renderGalleryContent({ pages, page, totalPages, sort, total, sotw }) {
   // sort row.
   const intro =
     '<h2 class="gallery-h">AI Composer Gallery</h2>' +
-    '<p class="gallery-sub">A directory of recently composed pages.</p>';
+    '<p class="gallery-sub">The finest destinations on the Information Superhighway, as voted by netizens like you. Bookmark liberally. Tell a friend, or a webring.</p>';
 
   // Site of the Week feature box sits above the sort toggle, only when
   // a winner exists. Empty state is "render nothing" per spec — no
@@ -98,9 +104,10 @@ function renderGalleryContent({ pages, page, totalPages, sort, total, sotw }) {
 
   const sortToggle =
     '<div class="gallery-toolbar">' +
-      '<div class="gallery-sort">Sort by: ' +
-        renderSortLink('Recent',  'recent',  sort) + ' | ' +
-        renderSortLink('Upvotes', 'upvotes', sort) +
+      '<div class="gallery-sort-group" role="tablist" aria-label="Sort gallery">' +
+        renderSortButton('Recent',                 'recent', sort) +
+        renderSortButton('This Week’s Best',   'week',   sort) +
+        renderSortButton('Best of All Time (so far)', 'all',  sort) +
       '</div>' +
     '</div>';
 
@@ -144,12 +151,13 @@ function renderSiteOfTheWeek(p) {
   '</div>';
 }
 
-function renderSortLink(label, value, currentSort) {
+function renderSortButton(label, value, currentSort) {
   const active = (value === currentSort);
   const href = value === 'recent' ? '/gallery' : '/gallery?sort=' + value;
-  return '<a href="' + escapeAttr(href) + '"' +
-    (active ? ' class="active"' : '') + '>' +
-    (active ? '[ ' + escapeHtml(label) + ' ]' : escapeHtml(label)) +
+  return '<a href="' + escapeAttr(href) + '" role="tab"' +
+    ' aria-selected="' + (active ? 'true' : 'false') + '"' +
+    ' class="gallery-sort-btn' + (active ? ' active' : '') + '">' +
+    escapeHtml(label) +
     '</a>';
 }
 
@@ -190,7 +198,8 @@ function renderCard(p) {
 }
 
 function renderPagination({ page, totalPages, sort }) {
-  const sortParam = (sort === 'upvotes') ? '&sort=upvotes' : '';
+  // 'recent' is the default, no need to carry it. The other two stick.
+  const sortParam = (sort === 'recent') ? '' : '&sort=' + sort;
   const prevUrl = page > 1 ? '/gallery?page=' + (page - 1) + sortParam : null;
   const nextUrl = page < totalPages ? '/gallery?page=' + (page + 1) + sortParam : null;
 
@@ -339,6 +348,18 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
     display: flex; align-items: center; justify-content: center; }
   .tbtn .lbl { font-size: 10px; }
   .tb-sep { width: 1px; margin: 2px 3px; background: var(--sh); border-right: 1px solid var(--hi); }
+  /* Gallery is a directory view, not an editor — the toolbar buttons stay
+     visible (so the chrome metaphor holds) but read as disabled. The AI
+     Composer button remains active. Grayscale on the icons sells the
+     "no document loaded" state better than opacity alone. */
+  .tbtn:not(.ai-btn) {
+    opacity: 0.42;
+    pointer-events: none;
+    cursor: default;
+    filter: grayscale(0.85);
+    color: #555;
+  }
+  .tbtn:not(.ai-btn):hover { border-color: transparent; }
   .tbtn.ai-btn {
     background: linear-gradient(180deg, #ff44ff 0%, #ff00cc 32%, #cc00ff 50%, #00ccff 68%, #22ffff 100%);
     color: black; border: 2px solid;
@@ -362,14 +383,19 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
       box-shadow: 0 0 10px 3px rgba(0,255,255,.85), 0 0 4px 1px rgba(255,0,255,.5); }
   }
   .workspace { flex: 1; background: var(--face); padding: 2px;
-    overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-  .edit-frame { flex: 1; background: white;
+    overflow: hidden; display: flex; flex-direction: column;
+    min-height: 0; min-width: 0; }
+  .edit-frame { flex: 1; background: white; min-width: 0;
     border: 2px solid; border-color: var(--sh) var(--hi) var(--hi) var(--sh);
     overflow: auto; min-height: 0; }
   .doc-content {
     padding: 28px 28px 56px;
     font-family: "Times New Roman", Times, serif;
     font-size: 14pt; color: #000; background: white; line-height: 1.55;
+    /* Box-sized + max-width keeps the gallery grid inside the chrome on
+       narrow viewports — without this, fixed-width flex children (the
+       SOTW thumbnail, mainly) could push the row wider than the window. */
+    box-sizing: border-box; max-width: 100%; overflow-x: hidden;
   }
   .doc-content h1 {
     font-size: 2.2em; font-weight: bold;
@@ -403,7 +429,11 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
   .fbtn.b { font-weight: bold; }
   .fbtn.i { font-style: italic; }
   .fbtn.u { text-decoration: underline; }
-  .fbtn:disabled, .format-bar select:disabled, .format-bar input:disabled { opacity: 0.85; }
+  .fbtn:disabled, .format-bar select:disabled, .format-bar input:disabled {
+    opacity: 0.42; cursor: default; pointer-events: none;
+    filter: grayscale(0.85);
+    color: #555;
+  }
   @media (max-width: 820px) {
     .format-bar { flex-wrap: wrap; }
     .format-bar select { max-width: 90px; font-size: 10px; }
@@ -440,14 +470,22 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
   }
   .sotw-body {
     display: flex; gap: 16px; align-items: flex-start;
+    flex-wrap: wrap;
   }
   .sotw-thumb {
-    flex: 0 0 280px;
+    flex: 0 1 280px;
+    max-width: 100%;
     display: block;
     aspect-ratio: 3 / 2;
     background: #ddd;
     border: 1px solid var(--sh);
     overflow: hidden;
+  }
+  @media (max-width: 540px) {
+    /* Stack SOTW vertically on narrow viewports so the 280px thumb
+       can't push the info column off-screen. */
+    .sotw-thumb { flex-basis: 100%; }
+    .sotw-info  { flex-basis: 100%; }
   }
   .sotw-thumb img {
     width: 100%; height: 100%;
@@ -486,26 +524,53 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
     .sotw-title { font-size: 16pt; }
   }
   .gallery-toolbar {
-    display: flex; justify-content: space-between; align-items: center;
-    margin: 0 0 16px; font-size: 12pt;
-    font-family: "MS Sans Serif", sans-serif;
+    display: flex; justify-content: center; align-items: center;
+    margin: 0 0 18px;
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
   }
-  .gallery-sort a {
-    color: #0000cc; text-decoration: underline;
-    margin: 0 2px; font-size: 11pt;
+  /* Segmented sort group — Win95 chrome bevel, connected (overlapping
+     borders) so the three buttons read as one control. Active button
+     uses the inverted "pressed" bevel and an inner shadow. */
+  .gallery-sort-group {
+    display: inline-flex;
+    background: var(--face);
   }
-  .gallery-sort a.active {
-    font-weight: bold; color: #000; text-decoration: underline;
+  .gallery-sort-btn {
+    display: inline-block;
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+    font-size: 11pt; line-height: 1.2;
+    color: #000;
+    background: var(--face);
+    padding: 6px 22px 7px;
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    text-decoration: none;
+    user-select: none;
+    cursor: pointer;
+    margin-right: -2px;       /* overlap so the segment reads as one bar */
+  }
+  .gallery-sort-btn:last-child { margin-right: 0; }
+  .gallery-sort-btn:hover { background: var(--face-lt); }
+  .gallery-sort-btn:focus-visible { outline: 1px dotted #000; outline-offset: -4px; }
+  .gallery-sort-btn.active {
+    border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk);
+    background: var(--face-lt);
+    font-weight: bold;
+    box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.18);
+    cursor: default;
+    /* Active sits "in front of" neighbors so its sunken bevel reads clean. */
+    position: relative; z-index: 1;
   }
   /* ---- Card grid: tighter density (1997 directory) ---- */
   .gallery-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px;
     margin: 0 0 20px;
+    max-width: 100%;
   }
-  @media (max-width: 819px) { .gallery-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
-  @media (max-width: 639px) { .gallery-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 819px) { .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
+  @media (max-width: 639px) { .gallery-grid { grid-template-columns: minmax(0, 1fr); } }
   .gallery-card {
     background: white;
     border: 1px solid;
@@ -564,24 +629,34 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
     text-decoration: underline;
   }
   .gallery-card:hover .gallery-title { color: #cc00cc; }
+  /* Single-line row: [▲ Upvote]  Upvotes: 0 · Hits: 1 — May 24, 1997.
+     Tight font + padding so it fits inside a ~240px card width. The
+     stats span gets ellipsis as a last-resort fallback on very narrow
+     viewports. */
   .gallery-row {
-    display: flex; align-items: center; gap: 8px;
-    flex-wrap: wrap;
+    display: flex; align-items: center; gap: 6px;
+    flex-wrap: nowrap;
+    min-width: 0;
   }
   .gallery-stats {
     font-family: "MS Sans Serif", Tahoma, sans-serif;
-    font-size: 11px; color: #333;
+    font-size: 10px; color: #333;
     text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1; min-width: 0;
   }
   .upvote-btn {
     font-family: "MS Sans Serif", Tahoma, sans-serif;
-    font-size: 11px; color: #000;
+    font-size: 10.5px; color: #000;
     background: var(--face);
     border: 2px solid; border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
-    padding: 1px 7px 2px;
+    padding: 1px 6px 2px;
     cursor: pointer;
     line-height: 1.2;
     white-space: nowrap;
+    flex-shrink: 0;
   }
   .upvote-btn:hover { background: var(--face-lt); }
   .upvote-btn:active,
@@ -593,13 +668,17 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
   .gallery-pagination {
     text-align: center; margin: 20px 0 8px;
     font-family: "MS Sans Serif", sans-serif; font-size: 11pt;
+    display: flex; justify-content: center; align-items: baseline; gap: 18px;
+    flex-wrap: wrap;
   }
-  .gallery-pagination a {
-    color: #0000cc; text-decoration: underline;
-    margin: 0 12px;
+  .gallery-pagination a,
+  .gallery-pagination .disabled,
+  .gallery-pagination .page-info {
+    display: inline-block;
   }
-  .gallery-pagination .disabled { color: #999; margin: 0 12px; }
-  .gallery-pagination .page-info { margin: 0 12px; color: #333; }
+  .gallery-pagination a { color: #0000cc; text-decoration: underline; }
+  .gallery-pagination .disabled { color: #999; }
+  .gallery-pagination .page-info { color: #333; }
   /* ---- Status bar (mirrors index/404) ---- */
   .statusbar {
     height: 20px; background: var(--face);
@@ -628,13 +707,16 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
   .status-links a { color: var(--select); text-decoration: underline; }
   .status-links a:visited { color: var(--vlink); }
   .status-links .sep { color: #666; margin: 0 4px; }
+  /* "Gallery" rendered as a "you are here" indicator on /gallery itself —
+     same row as the other footer links, but bold + non-clickable. */
+  .status-links .here { color: #000; font-weight: bold; cursor: default; }
   @media (max-width: 560px) { .status-links { display: none; } }
 </style>
 </head>
 <body>
 <div class="window">
   <div class="titlebar">
-    <span class="title">AI Netscape: 1997's AI-Powered HTML Editor</span>
+    <a class="title" href="/" style="color:inherit;text-decoration:none;">AI Netscape: 1997's AI-Powered HTML Editor</a>
     <div class="titlebar-btns">
       <button class="titlebar-btn" title="Minimize">_</button>
       <button class="titlebar-btn" title="Maximize">▢</button>
@@ -771,7 +853,7 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
       <div class="lbl">Spelling</div>
     </div>
     <div class="tb-sep"></div>
-    <a href="/" style="text-decoration:none;color:inherit;display:flex;">
+    <a href="/?ai=1" style="text-decoration:none;color:inherit;display:flex;">
       <div class="tbtn ai-btn" title="Open AI Composer">
         <div class="icon">
           <svg width="22" height="22" viewBox="0 0 22 22">
@@ -817,20 +899,29 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
   <div class="statusbar">
     <div class="status-pane flex">${escapeHtml(statusText)}</div>
     <div class="status-pane status-links">
-      <a href="/gallery">Gallery</a><span class="sep">·</span><a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
+      <span class="here">Gallery</span><span class="sep">·</span><a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
     </div>
     <div class="status-modem" title="Connection speed"><span>28.8 kbps</span></div>
     <div class="status-pane" id="status-clock">--:--</div>
   </div>
 </div>
 <script>
-  function tickClock() {
-    const d = new Date();
-    document.getElementById('status-clock').textContent =
-      String(d.getHours()).padStart(2,'0') + ':' +
-      String(d.getMinutes()).padStart(2,'0');
-  }
-  setInterval(tickClock, 1000); tickClock();
+  // Status clock — IIFE so a missing element can't take down the rest
+  // of the inline script (e.g. the upvote handler). Cached element ref
+  // avoids re-querying every tick. 30s cadence is enough to catch the
+  // minute boundary without burning cycles.
+  (function () {
+    const el = document.getElementById('status-clock');
+    if (!el) return;
+    function tick() {
+      const d = new Date();
+      el.textContent =
+        String(d.getHours()).padStart(2, '0') + ':' +
+        String(d.getMinutes()).padStart(2, '0');
+    }
+    tick();
+    setInterval(tick, 30000);
+  })();
 
   // Upvote wiring. Optimistic increment; on server confirmation we
   // replace with the authoritative count (handles already-voted and
@@ -873,11 +964,11 @@ function renderChrome({ title, content, statusText = 'Document: Done' }) {
 
 function serviceUnavailableHtml() {
   return renderChrome({
-    title: 'Gallery Unavailable — AI Netscape',
+    title: 'Top Sites Unavailable — AI Netscape',
     statusText: 'Document: Error 503',
     content:
       '<h1><span class="red">503</span> &mdash; <span class="blue">Gallery Unavailable</span></h1>' +
-      '<p>The Gallery archive server is currently being provisioned.</p>' +
+      '<p>The Top Sites archive server is currently being provisioned.</p>' +
       '<p>Please try again later, or <a href="/">return to AI Netscape</a> ' +
       'and generate a page directly.</p>'
   });
@@ -885,11 +976,11 @@ function serviceUnavailableHtml() {
 
 function errorHtml(msg) {
   return renderChrome({
-    title: 'Gallery Error — AI Netscape',
+    title: 'Top Sites Error — AI Netscape',
     statusText: 'Document: Error 500',
     content:
       '<h1><span class="red">500</span> &mdash; <span class="blue">Internal Error</span></h1>' +
-      '<p>The Gallery could not be loaded.</p>' +
+      '<p>Top Sites could not be loaded.</p>' +
       (msg ? '<p style="font-family:monospace;font-size:11pt;color:#666;">' + escapeHtml(msg) + '</p>' : '') +
       '<p><a href="/">Return to AI Netscape</a>.</p>'
   });

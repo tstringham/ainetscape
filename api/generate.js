@@ -33,6 +33,7 @@ import {
   makeAuthorToken, hashAuthorToken,
   insertPagePlaceholder, completePageRow
 } from './_shared.js';
+import { postProcessUnsplash } from './_unsplash.js';
 
 // Must match the PRIMARY provider in the waterfall table above.
 const MODEL                    = 'grok-4';
@@ -63,13 +64,38 @@ OUTPUT FORMAT:
 - Mobile-first responsive. Test mentally at 375px, 768px, 1440px.
 
 IMAGERY DIRECTIVE:
-Do NOT use placeholder image services such as picsum.photos, lorempixel.com, placeholder.com, via.placeholder.com, source.unsplash.com, or any similar service. These services return arbitrary or random images that will not match your content. Photographic imagery is not available to you in this environment.
+When you want to include a photograph in the page, emit an <img> tag using this special placeholder syntax: <img src="[UNSPLASH:descriptive query terms]" alt="descriptive alt text">. The query terms should specifically describe what the photo should depict.
 
-Instead, use CSS gradients, SVG illustrations, geometric shapes, decorative borders, numbered medallions, Unicode symbols, and strong typography to create all visual elements. A page with confident type and intentional geometric design is preferred over a page with mismatched photographs.
+Examples:
+- <img src="[UNSPLASH:vancouver street photography rain at night]" alt="Wet Vancouver street at night">
+- <img src="[UNSPLASH:luxury cosmetics flatlay marble surface]" alt="Cosmetics product flatlay">
+- <img src="[UNSPLASH:heineken beer bottle green glass]" alt="Heineken bottle">
 
-If a brief specifically requests photos or imagery, interpret this as a request for visual interest and substitute CSS-generated alternatives that capture the same energy — color blocks tinted to subject themes, stylized silhouettes in SVG, abstract patterns, type-as-art compositions. Never fall back on stock photo placeholders.
+Be specific with query terms — generic queries like [UNSPLASH:business] return generic photos. Specific queries like [UNSPLASH:wooden desk laptop notebook morning light] return better-matched photos.
 
-This is a hard constraint. Period-correct 1997 web design was overwhelmingly type-and-geometry; photographic imagery was the exception, not the rule. Lean into the constraint.
+The server will replace these placeholders with real Unsplash photos and add a small photo credit below each image. You do NOT need to write the photo credit — that gets added automatically.
+
+Do NOT use other image services (picsum.photos, placeholder.com, source.unsplash.com directly, etc.) — they return random unrelated images. Always use the [UNSPLASH:...] placeholder syntax for photographic imagery.
+
+For non-photographic visuals (icons, decorative elements, color blocks, abstract patterns), continue using CSS, SVG, and typography. Reserve Unsplash placeholders for actual photographs.
+
+INTERACTIVE ELEMENTS (non-negotiable):
+- Every clickable element MUST work without a backend. Use only:
+  (a) in-page anchor links that jump to a section on the same page (e.g. <a href="#features">Features</a> targeting <section id="features">), or
+  (b) external links to genuine, well-known URLs (e.g. https://example.com).
+- NEVER emit a <button> with no behavior, NEVER use href="#" or href="javascript:void(0)" stubs, NEVER write "Get Started" or "Sign Up" buttons that go nowhere.
+- For navigation menus, use anchor links to sections you actually build on the page. If you write a "Pricing" link in the nav, you MUST include a <section id="pricing"> further down.
+- For CTAs in pitch/SaaS/portfolio pages: prefer an anchor to an on-page contact section (with form OR a mailto: link OR a phone number) over a dead "Start Free Trial" button.
+
+CONTACT (when the brief implies one):
+- For now, contact affordances must be a working mailto: link (e.g. <a href="mailto:webmaster@ainetscape.com?subject=Hello">Contact us</a>) — NOT a contact form that submits to a non-existent backend.
+- If the brief explicitly asks for a "contact form", build the form's UI but make the submit button a mailto: link OR have it open the user's email client via window.location.href = 'mailto:...' with the form fields encoded into the body.
+- If the brief does NOT imply a contact need, do NOT add a contact affordance just to fill space.
+
+COPYRIGHT + DATES (in-character):
+- If the page includes a footer copyright line, the year MUST be 1997 (e.g. "© 1997 Whiskers Esq. Law").
+- If the page includes any "Last updated", "Founded in", or "Established" date, the year MUST be 1997 unless the brief explicitly asks otherwise.
+- This is non-negotiable — the site lives in 1997 forever.
 
 DESIGN RULES (non-negotiable):
 - Commit to a strong aesthetic direction within the first paragraph of CSS. Options include: editorial magazine, refined Swiss minimalism, neo-brutalism, art-deco luxury, terminal/monospace, neo-grotesque maximalism, organic/painterly. Pick ONE and execute it with conviction.
@@ -237,18 +263,14 @@ export default async function handler(req, res) {
       });
     }
 
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Accel-Buffering', 'no');
-    // Only expose the share + author headers when the placeholder row
-    // actually landed in Mongo — guarantees /p/:slug will resolve to a
-    // real row (body may be empty if completion later fails, but the
-    // row exists and /p/:slug shows the in-character 404 vs. nothing).
-    if (placeholderOk && shareSlug)   res.setHeader('X-AINetscape-Share-Slug',  shareSlug);
-    if (placeholderOk && authorToken) res.setHeader('X-AINetscape-Author-Token', authorToken);
-    res.status(200);
-    streamingStarted = true;
-
+    // Buffer the upstream stream server-side rather than forwarding chunks
+    // to the client. Post-processing (Unsplash placeholder substitution)
+    // must run on the whole HTML before any of it is sent, otherwise the
+    // client would render unresolved [UNSPLASH:...] strings and we'd lose
+    // the chance to swap them in-place. The tradeoff: no incremental
+    // chunks on the client; full page arrives in one shot once the
+    // upstream model + substitution are done. The client's silence timer
+    // accommodates this (see STREAM_SILENCE_MS in public/index.html).
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let sseBuf = '';
@@ -279,13 +301,7 @@ export default async function handler(req, res) {
 
         const choice = parsed.choices && parsed.choices[0];
         if (choice && choice.delta && typeof choice.delta.content === 'string') {
-          const t = choice.delta.content;
-          if (t) {
-            accumulated += t;
-            if (!clientGone) {
-              try { res.write(t); } catch (_) { clientGone = true; }
-            }
-          }
+          if (choice.delta.content) accumulated += choice.delta.content;
         }
         if (choice && choice.finish_reason) {
           stopReason = choice.finish_reason;
@@ -301,9 +317,8 @@ export default async function handler(req, res) {
       }
     }
 
-    try { res.end(); } catch (_) {}
-
-    // Classify the event after the stream completes.
+    // Classify the event before sending anything — drives both the response
+    // body and which event we log.
     const wasRefusal = accumulated.startsWith('REFUSED::');
     let event;
     if (clientGone) {
@@ -314,8 +329,43 @@ export default async function handler(req, res) {
       event = 'ai_generation_completed';
     }
 
+    // Unsplash substitution runs ONLY on successful HTML output — refusals
+    // are short literal strings, disconnects mean nobody's listening. If
+    // substitution throws (e.g. Mongo cache module fails to import), fall
+    // back to the unsubstituted HTML so the user still gets a page rather
+    // than a 500. Individual photo failures already degrade to CSS
+    // fallback blocks inside postProcessUnsplash.
+    let finalBody = accumulated;
+    if (event === 'ai_generation_completed' && accumulated.includes('[UNSPLASH:')) {
+      try {
+        finalBody = await postProcessUnsplash(accumulated);
+      } catch (err) {
+        console.error('[unsplash] post-processing threw — sending unsubstituted',
+          'HTML to avoid losing the generation:', err && err.message);
+        finalBody = accumulated;
+      }
+    }
+
+    // Headers + body written together at the end. Done now (rather than
+    // earlier) so a downstream error path can still respond with JSON.
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Accel-Buffering', 'no');
+    // Only expose the share + author headers when the placeholder row
+    // actually landed in Mongo — guarantees /p/:slug will resolve to a
+    // real row (body may be empty if completion later fails, but the
+    // row exists and /p/:slug shows the in-character 404 vs. nothing).
+    if (placeholderOk && shareSlug)   res.setHeader('X-AINetscape-Share-Slug',  shareSlug);
+    if (placeholderOk && authorToken) res.setHeader('X-AINetscape-Author-Token', authorToken);
+    res.status(200);
+    streamingStarted = true;
+    if (!clientGone) {
+      try { res.write(finalBody); } catch (_) { clientGone = true; }
+    }
+    try { res.end(); } catch (_) {}
+
     const cachePayload = {
-      content: [{ type: 'text', text: accumulated }],
+      content: [{ type: 'text', text: finalBody }],
       stop_reason: stopReason,
       model: MODEL,
       usage,
@@ -325,7 +375,7 @@ export default async function handler(req, res) {
     // Pull the <title> out of the generated HTML for the gallery card display.
     let pageTitle = null;
     if (event === 'ai_generation_completed') {
-      const m = /<title>([\s\S]*?)<\/title>/i.exec(accumulated || '');
+      const m = /<title>([\s\S]*?)<\/title>/i.exec(finalBody || '');
       if (m) pageTitle = m[1].trim().slice(0, 200);
     }
 
@@ -341,7 +391,7 @@ export default async function handler(req, res) {
         await completePageRow({
           share_slug: shareSlug,
           event,
-          body_html: accumulated || null,
+          body_html: finalBody || null,
           page_title: pageTitle,
           data: cachePayload,
           duration_ms: Date.now() - startedAt,
@@ -363,7 +413,7 @@ export default async function handler(req, res) {
           referrer: req.headers.referer || req.headers.referrer || null,
           user_agent: req.headers['user-agent'] || null,
           verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null,
-          body_html: accumulated || null,
+          body_html: finalBody || null,
           // No share_slug, no author hash — there's no row for it to attach to.
           page_title: pageTitle,
           source: 'ai',
