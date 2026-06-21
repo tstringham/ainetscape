@@ -92,7 +92,7 @@ These pieces are merged on the WIP branch but await their counterpart UX/system-
   3. Requires `RESEND_API_KEY` env var + completed DNS auth (SPF/DKIM for `webmaster@ainetscape.com` via Resend dashboard).
   Ship plan: build the recipient-email dialog → flip the SYSTEM_PROMPT → confirm DNS → deploy. All four steps need to land in the same release or the model will emit forms that 409 every submission.
 
-- **A10 Spelling modal** — audit is done by inspection (no dead clicks in current code; the Spelling stub is the only placeholder gag). Real modal needs Typo.js + Hunspell en-US (smaller en_US-large variant per Thomas's preference) vendored into `public/spell/`, with a faithful Netscape Composer "Check Spelling" modal (word-by-word, Suggestions list, Ignore / Ignore All / Change / Change All / Add / Done buttons).
+- **A10 Spelling modal** — shipped. Typo.js + Hunspell en_US vendored to `public/spell/` (~600KB, served with 30-day immutable Cache-Control). Lazy-loaded on first Spelling open; subsequent opens hit the HTTP cache. `public/spell/spell-check.js` carries the modal logic; the modal HTML is `#dlg-spell` in `public/index.html`. Ignored words persist in `sessionStorage` ("Ignore All"); custom additions persist in `localStorage` ("Add to Dictionary"). Toolbar `case 'spell'` + Tools > Check Spelling… both route to `openSpellingDialog()`.
 
 ## Helpful prior sessions
 

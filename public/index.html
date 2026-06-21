@@ -33,6 +33,10 @@
      starter doc's "Last updated" line. Cheap to fetch, browser-cached.
      If the file is missing (rare) the static placeholder stays visible. -->
 <script src="/last-updated.js" defer></script>
+<!-- A10 Spelling — UI hook + lazy dictionary loader. typo.js + the
+     Hunspell en_US .aff/.dic are fetched on first Spelling open, not
+     up front, so the 11ms initial paint stays clean. -->
+<script src="/spell/spell-check.js" defer></script>
 <script src="/share-dialog.js" defer></script>
 
 <!-- GA4 bootstrap. Generated at build time from GA_MEASUREMENT_ID env
@@ -851,6 +855,27 @@
     .ai-progress-bar { transition: none; }
   }
 
+  /* ===== A10 Spelling modal ===== */
+  /* Suggestion list rows: clickable, with a selected highlight that mirrors
+     the rest of the dialog cluster's selection color. Double-click commits. */
+  #spell-suggestions li {
+    padding: 2px 4px; cursor: default;
+  }
+  #spell-suggestions li:hover { background: #ececec; }
+  #spell-suggestions li.selected {
+    background: var(--select); color: var(--select-fg);
+  }
+  #spell-suggestions li.spell-no-sug {
+    color: #888; font-style: italic; cursor: default;
+  }
+  #spell-suggestions li.spell-no-sug:hover { background: transparent; }
+  /* In-context highlight when previewing the offending word inside its
+     surrounding text. Light yellow underline reads as a real Composer cue. */
+  .spell-hilite {
+    background: #fff4a3; color: #cc0000; font-weight: bold;
+    padding: 0 1px;
+  }
+
   /* ===== A9 window controls ===== */
   /* Minimized: hide the main window, surface the Win95-style taskbar stub. */
   body.win-minimized #main-window { display: none; }
@@ -1344,6 +1369,54 @@
   </div>
 </div>
 
+<!-- Check Spelling (A10) — real word-by-word workflow backed by
+     Typo.js + Hunspell en_US, lazily loaded from /spell/. -->
+<div class="modal-backdrop" id="dlg-spell">
+  <div class="dialog" style="width: 480px;">
+    <div class="titlebar">
+      <span class="title">Check Spelling</span>
+      <div class="titlebar-btns"><button class="titlebar-btn" data-close>✕</button></div>
+    </div>
+    <div class="dialog-body">
+      <div class="dialog-row" style="align-items:flex-start;">
+        <label style="padding-top:4px;">Not in dictionary:</label>
+        <div style="flex:1;">
+          <div id="spell-current-word"
+               style="font-family:'Times New Roman',Times,serif; font-weight:bold;
+                      font-size:14px; color:#cc0000;">—</div>
+          <div id="spell-context"
+               style="font-family:'Times New Roman',Times,serif; font-size:12px;
+                      color:#444; margin-top:6px; max-height:48px; overflow:auto;
+                      background:#fafafa; border:1px solid #ccc; padding:4px 6px;"></div>
+        </div>
+      </div>
+      <div class="dialog-row" style="align-items:flex-start;">
+        <label style="padding-top:4px;">Change to:</label>
+        <input type="text" id="spell-change-input"
+               style="flex:1; font-family:'MS Sans Serif',Tahoma,sans-serif; font-size:11px;
+                      padding:2px 4px;">
+      </div>
+      <div class="dialog-row" style="align-items:flex-start;">
+        <label style="padding-top:4px;">Suggestions:</label>
+        <ul id="spell-suggestions"
+            style="flex:1; list-style:none; margin:0; padding:2px; height:96px; overflow:auto;
+                   background:white; border:1px inset #888; font-size:11px;
+                   font-family:'MS Sans Serif',Tahoma,sans-serif;"></ul>
+      </div>
+      <div id="spell-status"
+           style="margin-top:6px; font-size:11px; color:#444;">Loading dictionary…</div>
+    </div>
+    <div class="dialog-footer" style="gap:4px; flex-wrap:wrap;">
+      <button class="dlg-btn" id="spell-btn-ignore">Ignore</button>
+      <button class="dlg-btn" id="spell-btn-ignore-all">Ignore All</button>
+      <button class="dlg-btn default" id="spell-btn-change">Change</button>
+      <button class="dlg-btn" id="spell-btn-change-all">Change All</button>
+      <button class="dlg-btn" id="spell-btn-add">Add</button>
+      <button class="dlg-btn" id="spell-btn-done">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- Disconnect confirmation (A9 close-button modal) -->
 <div class="modal-backdrop" id="dlg-disconnect">
   <div class="dialog" style="width: 380px;">
@@ -1652,7 +1725,7 @@ document.getElementById('main-toolbar').addEventListener('click', e => {
     case 'image':   saveSelection(); openImageDialog(); break;
     case 'hline':   exec('insertHorizontalRule'); break;
     case 'table':   saveSelection(); openDialog('dlg-table'); break;
-    case 'spell':   showAlert('Spelling', 'Spell check complete. No errors found.\n\n(Citation needed.)'); break;
+    case 'spell':   openSpellingDialog(); break;
     case 'ai':      openAIDialog(); break;
     case 'share':   openShareDialog(); break;
   }
@@ -1882,6 +1955,22 @@ function insertAnchor() {
   const name = prompt('Name of the named anchor:', '');
   if (!name) return;
   exec('insertHTML', `<a name="${escapeHTML(name)}"></a>`);
+}
+
+// A10 — thin shim around the lazy-loaded Spelling module. The actual
+// implementation lives in /spell/spell-check.js, loaded with defer so
+// it's available by the time anyone clicks Spelling. If the script
+// failed to load (network blip, ad-blocker), fall back to a polite
+// in-character alert rather than a dead click.
+function openSpellingDialog() {
+  const mod = window.AINetscape && window.AINetscape.spelling;
+  if (mod && typeof mod.open === 'function') {
+    mod.open();
+    return;
+  }
+  showAlert('Spelling',
+    'The dictionary module is still arriving. Please try again in a moment.\n\n' +
+    '(If this persists, your connection may be blocking /spell/.)');
 }
 
 function showAlert(title, msg) {
@@ -3532,7 +3621,7 @@ const MENUS = {
     { label: 'Outdent', acc: 'O', action: () => exec('outdent') }
   ],
   Tools: [
-    { label: 'Check Spelling...', acc: 'S', action: () => showAlert('Spelling', 'Spell check complete. No errors found.\n\nYour document has been certified spell-correct by the AI Netscape Quality Assurance team.') },
+    { label: 'Check Spelling...', acc: 'S', shortcut: 'F7', action: () => openSpellingDialog() },
     { label: 'AI Composer...',     acc: 'A', action: () => openAIDialog() },
     { type: 'separator' },
     { label: 'Word Count',         acc: 'W', action: () => showWordCount() },
