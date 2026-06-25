@@ -357,3 +357,11 @@ export async function completePageRow(payload) {
       await _update(payload);
     });
 }
+
+// Config read (no retry harness — on failure the caller falls back to the
+// default waterfall). Lazy-imports _db.js so the Mongo driver only loads when
+// MONGODB_URI is set, same contract as the write helpers above.
+export async function getAiWaterfall() {
+  const { getAiWaterfall: _get } = await import('./_db.js');
+  return _get();
+}

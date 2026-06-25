@@ -7,31 +7,28 @@
 // fast in ~1s instead of burning a full generation cycle).
 //
 // ============================================================
-// Multi-provider AI waterfall — priority order
+// Multi-provider AI waterfall
 // ============================================================
-// Canonical register of providers. Add, remove, or re-order here and
-// mirror any change in `/memory/project_ai_waterfall.md`. The MODEL
-// constant below must match the PRIMARY entry.
+// The provider REGISTRY (adapters, env keys, model allow-lists) lives in
+// api/_ai_providers.js. The ORDER of rungs is config-driven: read at request
+// time from Mongo (settings.aiWaterfall), edited from the admin panel without
+// a redeploy, and falling back to DEFAULT_WATERFALL when absent. All three
+// providers (xAI, Gemini, Anthropic) are wired; a rung whose API key is
+// missing from env is skipped gracefully.
 //
-//   1. PRIMARY    xAI Grok 4               — faster, lower cost,
-//                                             generous quota
-//   2. FALLBACK   Anthropic Claude Sonnet  — strongest design taste,
-//                                             reliable refusals
-//
-//   FUTURE CANDIDATES (under evaluation, not yet wired):
-//     - Google Gemini
-//     - OpenAI
-//
-// Fallback triggers: timeouts, REFUSED responses, malformed output,
-// rate-limit / quota exhaustion. Provider names live here and in
-// engineering docs — never in user-facing chrome.
+// Fall-through triggers: transport error, timeout, or an empty body. A
+// deliberate REFUSED:: body is terminal — we never shop a refusal to another
+// provider. Provider names live here and in engineering docs — never in
+// user-facing chrome. Mirror order/policy changes in
+// `/memory/project_ai_waterfall.md`.
 // ============================================================
 
 import {
   getCallerIp, parseBody, rateLimit, rateLimitMessage,
   makeCache, logEvent, makeShareSlug,
   makeAuthorToken, hashAuthorToken,
-  insertPagePlaceholder, completePageRow
+  insertPagePlaceholder, completePageRow,
+  getAiWaterfall
 } from './_shared.js';
 import { postProcessPexels } from './_pexels.js';
 // Unsplash post-processor is retained as the standby failover. The
@@ -42,8 +39,17 @@ import { postProcessPexels } from './_pexels.js';
 // no [UNSPLASH:] tokens appear in the body.
 import { postProcessUnsplash } from './_unsplash.js';
 
-// Must match the PRIMARY provider in the waterfall table above.
-const MODEL                    = 'grok-4';
+// Config-driven provider waterfall (order from Mongo settings.aiWaterfall,
+// falling back to DEFAULT_WATERFALL). runWaterfall attempts each runnable rung
+// in order, buffered, falling through on error/timeout/empty body.
+import { runWaterfall, resolveRunnableWaterfall, DEFAULT_WATERFALL } from './_ai_providers.js';
+
+// Provider waterfall timing. Each rung is buffered (not streamed) so we can
+// fall through on failure; the function maxDuration is 300s (vercel.json), so
+// we stop starting new rungs well before that to leave room for image
+// post-processing and the two-stage Mongo write.
+const PER_RUNG_TIMEOUT_MS      = 120000;
+const WATERFALL_DEADLINE_MS    = 255000;
 const MAX_TOKENS               = 8000;
 const MIN_BRIEF_LENGTH         = 3;
 const MAX_BRIEF_LENGTH         = 6000;
@@ -142,12 +148,6 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'AI Composer is temporarily offline for maintenance. Please try again later.' });
   }
 
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    console.error('Missing XAI_API_KEY env var');
-    return res.status(500).json({ error: 'The service is not configured correctly.' });
-  }
-
   const ip = getCallerIp(req);
   const body = parseBody(req);
 
@@ -198,6 +198,27 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Resolve the provider waterfall: Mongo settings doc if present, else the
+  // hardcoded default. Then keep only rungs that are enabled AND whose API key
+  // is in env — a keyless rung is skipped, never a hard failure. If nothing is
+  // runnable, fail fast before writing a placeholder row.
+  let waterfallOrder = DEFAULT_WATERFALL;
+  if (sharingEnabled) {
+    try {
+      const cfg = await getAiWaterfall();
+      if (Array.isArray(cfg) && cfg.length) waterfallOrder = cfg;
+    } catch (err) {
+      console.error('[waterfall] settings read failed; using default order —',
+        err && err.message);
+    }
+  }
+  const runnable = resolveRunnableWaterfall(waterfallOrder);
+  if (!runnable.length) {
+    console.error('[waterfall] no runnable providers — missing API keys for',
+      waterfallOrder.map(r => r.provider).join(', '));
+    return res.status(500).json({ error: 'The service is not configured correctly.' });
+  }
+
   const shareSlug   = sharingEnabled ? makeShareSlug()   : null;
   // Fresh-only — never sent on cache hits, so only the original generator's
   // browser ever sees the raw token. Subsequent viewers can't claim authorship.
@@ -231,36 +252,44 @@ export default async function handler(req, res) {
   let streamingStarted = false;
   let clientGone = false;
 
-  // Detect client disconnect so we can log ai_disconnected when the stream
-  // ends. We keep reading the upstream stream to completion (refusals are
-  // tiny; full pages aren't worth re-fetching) but flag the state.
+  // Detect client disconnect so we can log ai_disconnected. The in-flight
+  // provider request still runs to completion (it's cheap to let finish), but
+  // the waterfall won't start a new rung once the client is gone.
   req.on('close', () => { clientGone = true; });
 
   try {
-    // xAI Chat Completions — OpenAI-shaped API. System prompt is the first
-    // message rather than a top-level field; no prompt caching available
-    // (the 3KB system prompt gets re-billed each request).
-    const upstream = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + apiKey
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        stream: true,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user',   content: 'Brief:\n\n' + brief }
-        ]
-      })
+    // ---- Provider waterfall ----
+    // Attempt each runnable rung in order, BUFFERED server-side: the whole
+    // HTML must exist before any of it ships, because the image post-processor
+    // rewrites <img data-pexels="…"> placeholders in place. On transport
+    // error / timeout / empty body we fall through to the next rung; a
+    // deliberate REFUSED:: body is terminal (we never shop a refusal to
+    // another provider). Rungs with no API key were already filtered out.
+    let accumulated = '';
+    let stopReason  = null;
+    let usage       = null;
+    let usedModel   = null;
+
+    const wf = await runWaterfall({
+      order: runnable,
+      systemPrompt: SYSTEM_PROMPT,
+      userContent: 'Brief:\n\n' + brief,
+      maxTokens: MAX_TOKENS,
+      perRungTimeoutMs: PER_RUNG_TIMEOUT_MS,
+      deadlineMs: WATERFALL_DEADLINE_MS,
+      isClientGone: () => clientGone,
+      log: (m) => console.log('[waterfall]', m)
     });
 
-    if (!upstream.ok) {
-      let errBody = null;
-      try { errBody = await upstream.json(); } catch (_) {}
-      console.error('xAI API error:', upstream.status, errBody && (errBody.error || errBody));
+    accumulated = wf.text || '';
+    stopReason  = wf.stopReason || null;
+    usage       = wf.usage || null;
+    usedModel   = wf.model || null;
+
+    if (!accumulated) {
+      // Every runnable rung errored, timed out, or returned nothing usable.
+      // Mirror the old single-provider failure path: log once, return 502.
+      console.error('[waterfall] all rungs exhausted —', JSON.stringify(wf.attempts));
       try {
         await logEvent({
           ip, event: 'ai_generation_failed', brief, ref,
@@ -268,66 +297,10 @@ export default async function handler(req, res) {
           referrer: req.headers.referer || null,
           user_agent: req.headers['user-agent'] || null
         });
-      } catch (_) { /* logger gave up; xAI error response still goes out */ }
-      const status = upstream.status === 429 ? 429 : 502;
-      return res.status(status).json({
-        error: (errBody && errBody.error && (errBody.error.message || errBody.error))
-            || 'The generation service returned an error.'
+      } catch (_) { /* logger gave up; 502 still goes out */ }
+      return res.status(502).json({
+        error: 'The generation service is temporarily unavailable. Please try again.'
       });
-    }
-
-    // Buffer the upstream stream server-side rather than forwarding chunks
-    // to the client. Post-processing (Unsplash placeholder substitution)
-    // must run on the whole HTML before any of it is sent, otherwise the
-    // client would render unresolved [UNSPLASH:...] strings and we'd lose
-    // the chance to swap them in-place. The tradeoff: no incremental
-    // chunks on the client; full page arrives in one shot once the
-    // upstream model + substitution are done. The client's silence timer
-    // accommodates this (see STREAM_SILENCE_MS in public/index.html).
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let sseBuf = '';
-    let accumulated = '';
-    let stopReason = null;
-    let usage = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      sseBuf += decoder.decode(value, { stream: true });
-
-      // OpenAI-style SSE: events are `data: <json>` lines separated by
-      // blank lines, with a `data: [DONE]` terminator on completion.
-      let evtEnd;
-      while ((evtEnd = sseBuf.indexOf('\n\n')) >= 0) {
-        const rawEvent = sseBuf.slice(0, evtEnd);
-        sseBuf = sseBuf.slice(evtEnd + 2);
-
-        let dataLine = null;
-        for (const line of rawEvent.split('\n')) {
-          if (line.startsWith('data:')) { dataLine = line.slice(5).trim(); break; }
-        }
-        if (!dataLine || dataLine === '[DONE]') continue;
-
-        let parsed;
-        try { parsed = JSON.parse(dataLine); } catch (_) { continue; }
-
-        const choice = parsed.choices && parsed.choices[0];
-        if (choice && choice.delta && typeof choice.delta.content === 'string') {
-          if (choice.delta.content) accumulated += choice.delta.content;
-        }
-        if (choice && choice.finish_reason) {
-          stopReason = choice.finish_reason;
-        }
-        if (parsed.usage) {
-          // xAI emits usage on the final chunk. Normalize to the same shape
-          // _db.js expects (output_tokens / input_tokens).
-          usage = {
-            input_tokens: parsed.usage.prompt_tokens || 0,
-            output_tokens: parsed.usage.completion_tokens || 0
-          };
-        }
-      }
     }
 
     // Classify the event before sending anything — drives both the response
@@ -396,7 +369,7 @@ export default async function handler(req, res) {
     const cachePayload = {
       content: [{ type: 'text', text: finalBody }],
       stop_reason: stopReason,
-      model: MODEL,
+      model: usedModel,
       usage,
       share_slug: shareSlug    // sticky across cache hits
     };

@@ -495,6 +495,33 @@ export async function setContactRecipient({ slug, author_token_hash, recipient_e
   return { ok: true };
 }
 
+// ============================================================
+// App settings — a tiny key/value collection for operator-tunable config
+// that must change without a redeploy. Today the only key is the AI provider
+// waterfall (order of { provider, model, enabled } rungs); see
+// api/_ai_providers.js and the admin panel. Doc shape:
+//   { _id: 'aiWaterfall', order: [...], updated_at: Date }
+// ============================================================
+export async function getAiWaterfall() {
+  const d = await getDb();
+  const doc = await d.collection('settings').findOne(
+    { _id: 'aiWaterfall' },
+    { projection: { order: 1, _id: 0 } }
+  );
+  return doc && Array.isArray(doc.order) ? doc.order : null;
+}
+
+export async function setAiWaterfall(order) {
+  if (!Array.isArray(order)) throw new Error('setAiWaterfall requires an array');
+  const d = await getDb();
+  await d.collection('settings').updateOne(
+    { _id: 'aiWaterfall' },
+    { $set: { order, updated_at: new Date() } },
+    { upsert: true }
+  );
+  return true;
+}
+
 export async function logEvent({
   ip, event, kind, brief, data, ref, forceBuild, duration_ms,
   referrer, user_agent, verdict, body_html, share_slug,

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Operations</title>
+<style>
+  body { font: 13px/1.5 -apple-system, system-ui, "Segoe UI", sans-serif; background: #c0c0c0; color: #1a1a1a; margin: 0; padding: 24px; }
+  main { max-width: 720px; margin: 0 auto; background: #fff; border: 2px solid; border-color: #fff #808080 #808080 #fff; padding: 20px 22px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 18px; color: #555; }
+  label { font-weight: 600; }
+  input[type=password] { font: inherit; padding: 5px 7px; width: 260px; border: 2px solid; border-color: #808080 #fff #fff #808080; }
+  button { font: inherit; padding: 5px 12px; cursor: pointer; border: 2px solid; border-color: #fff #808080 #808080 #fff; background: #d4d0c8; }
+  button:active { border-color: #808080 #fff #fff #808080; }
+  button:disabled { color: #888; cursor: default; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid #bbb; margin: 6px 0; background: #f6f6f6; }
+  .row .pos { width: 18px; color: #888; text-align: right; }
+  .row .name { width: 96px; font-weight: 600; }
+  .row select { font: inherit; padding: 3px; }
+  .row .flags { margin-left: auto; color: #777; font-size: 12px; }
+  .warn { color: #9a3a2a; }
+  .ok { color: #2a6b2a; }
+  .reorder button { padding: 2px 8px; }
+  #status { margin-top: 14px; min-height: 18px; font-size: 12px; }
+  section { margin-top: 18px; }
+  .hidden { display: none; }
+  hr { border: 0; border-top: 1px solid #ccc; margin: 16px 0; }
+  small { color: #666; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Operations</h1>
+  <p class="sub">Restricted. Configuration changes only.</p>
+
+  <section id="auth">
+    <label for="token">Access token</label><br>
+    <input type="password" id="token" autocomplete="off" spellcheck="false">
+    <button id="load">Load</button>
+  </section>
+
+  <section id="panel" class="hidden">
+    <hr>
+    <h1 style="font-size:14px;">Generation order</h1>
+    <small>Top rung is tried first. On failure or timeout it falls through to the next. A rung with no key is skipped.</small>
+    <div id="rows"></div>
+    <div style="margin-top:14px;">
+      <button id="save">Save order</button>
+      <button id="reload">Discard &amp; reload</button>
+    </div>
+  </section>
+
+  <div id="status"></div>
+</main>
+
+<script>
+  var ENDPOINT = '/api/admin/ai-waterfall';
+  var token = '';
+  var providers = {};   // id -> {label, models, keyPresent}
+  var order = [];       // [{provider, model, enabled}]
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function setStatus(msg, kind) {
+    var el = $('status');
+    el.textContent = msg || '';
+    el.className = kind || '';
+  }
+
+  function headers() {
+    return { 'Content-Type': 'application/json', 'x-admin-token': token };
+  }
+
+  function render() {
+    var host = $('rows');
+    host.innerHTML = '';
+    order.forEach(function (rung, i) {
+      var p = providers[rung.provider] || { label: rung.provider, models: [rung.model], keyPresent: false };
+      var row = document.createElement('div');
+      row.className = 'row';
+
+      var pos = document.createElement('span'); pos.className = 'pos'; pos.textContent = (i + 1) + '.';
+      var name = document.createElement('span'); name.className = 'name'; name.textContent = p.label;
+
+      var enable = document.createElement('input');
+      enable.type = 'checkbox'; enable.checked = rung.enabled !== false;
+      enable.addEventListener('change', function () { order[i].enabled = enable.checked; });
+      var enableLbl = document.createElement('label'); enableLbl.style.fontWeight = 'normal';
+      enableLbl.appendChild(enable); enableLbl.appendChild(document.createTextNode(' enabled'));
+
+      var sel = document.createElement('select');
+      (p.models || [rung.model]).forEach(function (m) {
+        var o = document.createElement('option'); o.value = m; o.textContent = m;
+        if (m === rung.model) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', function () { order[i].model = sel.value; });
+
+      var flags = document.createElement('span'); flags.className = 'flags';
+      flags.innerHTML = p.keyPresent
+        ? '<span class="ok">key present</span>'
+        : '<span class="warn">no key — skipped</span>';
+
+      var reorder = document.createElement('span'); reorder.className = 'reorder';
+      var up = document.createElement('button'); up.textContent = '↑'; up.disabled = (i === 0);
+      up.addEventListener('click', function () { swap(i, i - 1); });
+      var down = document.createElement('button'); down.textContent = '↓'; down.disabled = (i === order.length - 1);
+      down.addEventListener('click', function () { swap(i, i + 1); });
+      reorder.appendChild(up); reorder.appendChild(down);
+
+      row.appendChild(pos);
+      row.appendChild(name);
+      row.appendChild(sel);
+      row.appendChild(enableLbl);
+      row.appendChild(flags);
+      row.appendChild(reorder);
+      host.appendChild(row);
+    });
+  }
+
+  function swap(a, b) {
+    if (b < 0 || b >= order.length) return;
+    var t = order[a]; order[a] = order[b]; order[b] = t;
+    render();
+  }
+
+  function applyState(data) {
+    providers = {};
+    (data.providers || []).forEach(function (p) { providers[p.id] = p; });
+    order = (data.order || []).map(function (r) {
+      return { provider: r.provider, model: r.model, enabled: r.enabled !== false };
+    });
+    $('panel').classList.remove('hidden');
+    render();
+    setStatus(data.usingDefault ? 'Loaded defaults (no saved order yet).' : 'Loaded saved order.', 'ok');
+  }
+
+  function load() {
+    token = $('token').value.trim();
+    if (!token) { setStatus('Enter the access token.', 'warn'); return; }
+    setStatus('Loading…');
+    fetch(ENDPOINT, { headers: headers() })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { setStatus('Error: ' + (res.j.error || 'failed'), 'warn'); return; }
+        applyState(res.j);
+      })
+      .catch(function (e) { setStatus('Network error: ' + e.message, 'warn'); });
+  }
+
+  function save() {
+    setStatus('Saving…');
+    var payload = { order: order.map(function (r) { return { provider: r.provider, model: r.model, enabled: r.enabled }; }) };
+    fetch(ENDPOINT, { method: 'POST', headers: headers(), body: JSON.stringify(payload) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { setStatus('Save failed: ' + (res.j.error || '') + (res.j.detail ? (' (' + res.j.detail + ')') : ''), 'warn'); return; }
+        applyState(res.j);
+        setStatus('Saved. New order is live (no redeploy needed).', 'ok');
+      })
+      .catch(function (e) { setStatus('Network error: ' + e.message, 'warn'); });
+  }
+
+  $('load').addEventListener('click', load);
+  $('reload').addEventListener('click', load);
+  $('save').addEventListener('click', save);
+  $('token').addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+</script>
+</main>
+</body>
+</html>
