@@ -648,6 +648,29 @@
     font-weight: bold;
   }
 
+  /* Status-bar speaker: one-click mute toggle, sits beside the 28.8 kbps pane.
+     ON = sound waves shown, no slash. MUTED = red slash, waves hidden. The OS
+     owns volume — this is a hard on/off, no slider, no popup. */
+  .status-sound {
+    background: var(--face);
+    border: 1px solid;
+    border-color: var(--sh) var(--hi) var(--hi) var(--sh);
+    cursor: pointer;
+    user-select: none;
+    padding: 0 5px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+  }
+  .status-sound:hover { background: var(--face-lt); }
+  .status-sound:active { border-color: var(--hi) var(--sh) var(--sh) var(--hi); }
+  .status-sound svg { display: block; width: 14px; height: 14px; color: var(--text); }
+  .status-sound .spk-body  { fill: currentColor; }
+  .status-sound .spk-wave  { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+  .status-sound .spk-slash { fill: none; stroke: #c00000; stroke-width: 2; stroke-linecap: round; display: none; }
+  .status-sound.muted .spk-wave  { display: none; }
+  .status-sound.muted .spk-slash { display: block; }
+
   /* Persistent footer-link cluster — Terms · Privacy · Copyright · FAQ.
      Lives in the status bar so it appears on every chrome surface. */
   .status-links {
@@ -1229,6 +1252,14 @@
     <div class="status-pane status-links">
       <a href="/gallery">Gallery</a><span class="sep">·</span><a href="/terms">Terms</a><span class="sep">·</span><a href="/privacy">Privacy</a><span class="sep">·</span><a href="/copyright">Copyright</a><span class="sep">·</span><a href="/faq">FAQ</a>
     </div>
+    <button class="status-pane status-sound" id="sound-toggle" type="button" title="Sound on (click to mute)" aria-pressed="false" aria-label="Toggle sound">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <polygon class="spk-body" points="3,9 3,15 7,15 12,19 12,5 7,9"/>
+        <path class="spk-wave" d="M15 9.5a3.5 3.5 0 0 1 0 5"/>
+        <path class="spk-wave" d="M17.5 7a7 7 0 0 1 0 10"/>
+        <line class="spk-slash" x1="3" y1="4" x2="21" y2="20"/>
+      </svg>
+    </button>
     <button class="status-pane status-modem" id="modem-upgrade" title="Upgrade your connection">
       <span id="modem-speed">28.8 kbps</span><span id="modem-cta">— upgrade to 56k?</span>
     </button>
@@ -1610,6 +1641,40 @@ function updateShareButtonVisibility() {
 const reduceMotion = (function () {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
   catch (_) { return false; }
+})();
+
+// ---- Sound mute toggle (status-bar speaker) ----
+// Single boolean, persisted to localStorage. Default ON (sound). With no
+// stored preference, a prefers-reduced-motion user starts MUTED so the speaker
+// icon honestly reflects the silence reduceMotion already enforces. The OS
+// owns volume — this is a hard on/off, no slider, no popup.
+let soundMuted = (function () {
+  try {
+    const stored = localStorage.getItem('ainetscape-sound-muted');
+    if (stored === '1') return true;
+    if (stored === '0') return false;
+  } catch (_) {}
+  return reduceMotion;
+})();
+
+function renderSoundToggle() {
+  const btn = document.getElementById('sound-toggle');
+  if (!btn) return;
+  btn.classList.toggle('muted', soundMuted);
+  btn.setAttribute('aria-pressed', soundMuted ? 'true' : 'false');
+  btn.title = soundMuted ? 'Sound off (click to unmute)' : 'Sound on (click to mute)';
+}
+
+function toggleSound() {
+  soundMuted = !soundMuted;
+  try { localStorage.setItem('ainetscape-sound-muted', soundMuted ? '1' : '0'); } catch (_) {}
+  renderSoundToggle();
+}
+
+(function wireSoundToggle() {
+  const btn = document.getElementById('sound-toggle');
+  if (btn) btn.addEventListener('click', toggleSound);
+  renderSoundToggle();
 })();
 
 // ---- Selection persistence (for dialogs) ----
@@ -2186,9 +2251,9 @@ function clearModemTimers() { modemTimers.forEach(clearTimeout); modemTimers = [
 function stopModemAll() { clearModemTimers(); modem.stop(); }
 
 // Disconnect: full hang-up on success, descending failure triplet on error.
-// Audio plays by default — only reduceMotion users get silence.
+// Silenced when the status-bar speaker is muted, or for reduceMotion users.
 function playDisconnect(success) {
-  if (reduceMotion) return;
+  if (reduceMotion || soundMuted) return;
   try {
     modem.ensureContext();
     if (success) {
@@ -2204,11 +2269,11 @@ function playDisconnect(success) {
 
 // Play the handshake, then loop a soft carrier hum if the request runs long.
 function playModemSequence() {
-  if (reduceMotion) return;
+  if (reduceMotion || soundMuted) return;
   modem.play().then(durSec => {
     const durMs = (durSec || 7.5) * 1000;
     const humLoop = () => {
-      if (!aiInFlight || reduceMotion) return;
+      if (!aiInFlight || reduceMotion || soundMuted) return;
       try { modem.hum(4); } catch (_) {}
       modemTimers.push(setTimeout(humLoop, 3800));
     };
