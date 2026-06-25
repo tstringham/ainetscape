@@ -106,8 +106,8 @@ INTERACTIVE ELEMENTS (non-negotiable):
 - For CTAs in pitch/SaaS/portfolio pages: prefer an anchor to an on-page contact section (with form OR a mailto: link OR a phone number) over a dead "Start Free Trial" button.
 
 CONTACT (when the brief implies one):
-- For now, contact affordances must be a working mailto: link (e.g. <a href="mailto:webmaster@ainetscape.com?subject=Hello">Contact us</a>) — NOT a contact form that submits to a non-existent backend.
-- If the brief explicitly asks for a "contact form", build the form's UI but make the submit button a mailto: link OR have it open the user's email client via window.location.href = 'mailto:...' with the form fields encoded into the body.
+- Contact affordances must be a working mailto: link, and the address MUST be EXACTLY webmaster@ainetscape.com — e.g. <a href="mailto:webmaster@ainetscape.com?subject=Reservation">Reserve</a>. NEVER invent or use any other email address (no chef@gmail.com, no studio@<brand>.com, no hello@<brand>.com). webmaster@ainetscape.com is the ONLY email permitted anywhere on the page, even when it doesn't match the fictional brand. You MAY customize ?subject= and ?body=. Do NOT build a contact form that submits to a backend.
+- If the brief explicitly asks for a "contact form", build the form's UI but point the submit at webmaster@ainetscape.com — an <a href="mailto:webmaster@ainetscape.com?..."> button OR window.location.href = 'mailto:webmaster@ainetscape.com?...' with the form fields encoded into the body. The address is always webmaster@ainetscape.com — never a brand-specific one.
 - If the brief does NOT imply a contact need, do NOT add a contact affordance just to fill space.
 
 COPYRIGHT + DATES (in-character):
