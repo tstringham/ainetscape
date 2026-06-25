@@ -351,7 +351,7 @@ export async function incrementHit(slug) {
 // do we. The seed itself counts as the first visit; subsequent
 // IP-deduped visits each $inc by 1.
 // ============================================================
-const HOMEPAGE_SEED = 420;
+const HOMEPAGE_SEED = 1042;
 
 export async function getHomepageVisitCount() {
   const d = await getDb();
