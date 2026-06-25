@@ -107,6 +107,7 @@ CONTACT (when the brief implies one):
 COPYRIGHT + DATES (in-character):
 - If the page includes a footer copyright line, the year MUST be 1997 (e.g. "© 1997 Whiskers Esq. Law").
 - If the page includes any "Last updated", "Founded in", or "Established" date, the year MUST be 1997 unless the brief explicitly asks otherwise.
+- DATE GUARD (applies to ALL output, not just copyright/footer lines): the generated page must NEVER contain any year, date, or reference later than 1997 — not in the <title>, headings, body copy, captions, image alt text, prices, event dates, or any filename/slug you invent. Post-1997 years are forbidden everywhere: a title like "BRAND — 2026" or "BRAND • 15.03.26" must instead drop the year or use a 1997 date. Treat 1997 as the present — "modern", "as of <year>", version years, and any real-world date after 1997 do not exist on this site.
 - This is non-negotiable — the site lives in 1997 forever.
 
 DESIGN RULES (non-negotiable):
