@@ -135,8 +135,8 @@ function renderSiteOfTheWeek(p) {
     '<div class="sotw-header">&#9733; SITE OF THE WEEK</div>' +
     '<div class="sotw-body">' +
       '<a class="sotw-thumb" href="' + escapeAttr(href) + '" tabindex="-1" aria-hidden="true">' +
-        '<img src="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
-          'onerror="this.parentNode.classList.add(\'thumb-failed\')">' +
+        '<img src="' + escapeAttr(staticThumbUrl(slug)) + '" data-fallback="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
+          'onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute(\'data-fallback\');}else{this.parentNode.classList.add(\'thumb-failed\');}">' +
       '</a>' +
       '<div class="sotw-info">' +
         '<a class="sotw-title" href="' + escapeAttr(href) + '" title="' + escapeAttr(title) + '">' +
@@ -175,8 +175,8 @@ function renderCard(p) {
   // /api/vote and refreshes its own count inline.
   return '<div class="gallery-card">' +
     '<a class="gallery-thumb" href="' + escapeAttr(href) + '" tabindex="-1" aria-hidden="true">' +
-      '<img src="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
-        'onerror="this.parentNode.classList.add(\'thumb-failed\')">' +
+      '<img src="' + escapeAttr(staticThumbUrl(slug)) + '" data-fallback="' + escapeAttr(thumb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
+        'onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute(\'data-fallback\');}else{this.parentNode.classList.add(\'thumb-failed\');}">' +
     '</a>' +
     '<div class="gallery-meta">' +
       '<a class="gallery-title" href="' + escapeAttr(href) + '" title="' + escapeAttr(title) + '">' +
@@ -229,6 +229,15 @@ function formatCount(n) {
   const v = Number(n) || 0;
   if (v < 1000) return String(v);
   return v.toLocaleString('en-US');
+}
+
+// Static gallery thumbnail: a committed PNG at public/images/gallery/<slug>.png.
+// Used as the PRIMARY <img> src. Most slugs have no static file (404), so the
+// onerror handler falls back to the Microlink live screenshot below — reseeded
+// pages get a fast, reliable committed thumb; every other card keeps the
+// dynamic Microlink behavior unchanged.
+function staticThumbUrl(slug) {
+  return '/images/gallery/' + encodeURIComponent(slug) + '.png';
 }
 
 function microlinkThumbnailUrl(slug) {
