@@ -13,3 +13,7 @@ public/terms.html
 public/privacy.html
 public/copyright.html
 public/faq.html
+
+# Local exploratory / review scratch — generated test pages + screenshots,
+# never part of the product. Kept on disk, excluded from the repo.
+review/
