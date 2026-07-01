@@ -2440,48 +2440,112 @@ function setAIStatus(msg) {
   if (s) s.textContent = msg;
 }
 
-// 12-prompt pool — 4 are sampled at random each time the AI dialog opens.
-// 5-8 are Silicon Valley-aimed; 7-8 are deliberate nods to specific essay
-// titles. Keep both — these are load-bearing easter eggs.
-const EXAMPLE_PROMPTS = [
-  { label: 'Lumen AI startup',                     prompt: 'A landing page for a venture-backed AI startup called Lumen that builds memory for agents. Hero, three features, a customer logo wall, and a CTA.' },
-  { label: 'Designer portfolio',                   prompt: 'A personal portfolio for a designer named Mira Chen with a hero, six project cards, and a contact section. Editorial typography.' },
-  { label: 'YC SaaS pitch',                        prompt: 'A pitch page for a SaaS that helps founders auto-apply to YC. Bold, opinionated typography. Hero with strong claim, problem, solution, pricing table.' },
-  { label: 'Ramen bar',                            prompt: 'A modern restaurant homepage for a Tokyo-inspired ramen bar. Atmospheric, dark, with menu, hours, and reservation CTA.' },
-  { label: 'Series A for a smart juicer',          prompt: 'A Series A pitch page for a smart juicer startup. Hero with bold claim, the problem with juice today, the solution, traction metrics, team bios, and the ask. Clean SaaS aesthetic.' },
-  { label: 'Seed round for "email, but AI"',       prompt: 'A seed-stage pitch page for an AI email assistant called Inbox.ai. Hero, problem statement, product demo placeholder, traction numbers, founding team, and a contact section.' },
-  { label: 'Manifesto: software is eating the world', prompt: 'A long-form essay manifesto titled "Software Is Eating the World." Editorial typography, drop caps, generous line height, pull quotes, signed by the author at the end.' },
-  { label: 'A page that says "It\'s Time to Build"', prompt: 'An essay-style manifesto with the title "It\'s Time to Build." Editorial layout, large hero title, body in serif, signed at the end with a call to action.' },
-  { label: '22 reasons Jack could\'ve fit on the door', prompt: 'A passionate fan blog post titled "22 Reasons Jack Could Have Fit on the Door." Numbered list with image placeholders, an outraged tone, and a comment section at the bottom.' },
-  { label: 'Memorial page for a Tamagotchi',       prompt: 'An in-memoriam page for a beloved Tamagotchi named Pixel. Tasteful headline, life-story paragraphs, photo gallery, and a guestbook for condolences.' },
-  { label: 'Petition to outlaw December',          prompt: 'A petition page demanding the abolition of the month of December. Hero with the demand, a list of grievances against December, a signature counter, and fields to add your name.' },
-  { label: 'My cat\'s law firm',                   prompt: 'A homepage for a law firm operated by a cat named Whiskers, Esq. Hero, three practice-area cards (estate planning, organized mischief, naptime advocacy), team bios, and a contact form.' }
-];
+// ============================================================
+// AI Composer — helper-button dispatch config (Part A). ONE editable block:
+// tune weights / registers / aesthetics / premises here (no admin UI).
+//
+// A button tap dispatches  premise × random register × random aesthetic, so
+// the SAME button yields a different site each tap. Typed prompts are untouched
+// — they pass straight to the generator. The register/aesthetic are never shown
+// to the user; the chip label stays short and the output surprises.
+// ============================================================
+const COMPOSER_CONFIG = {
+  // Distribution of the on-screen button mix across pillars (~30/25/25/20).
+  pillarWeights: {
+    '1997↔2026':     0.30,
+    'pop_nostalgia': 0.25,
+    'sv_vc':         0.25,
+    'absurd':        0.20
+  },
+  registers: [
+    'solemn eulogy', 'corporate press release', 'true-crime documentary',
+    'nature documentary', 'luxury auction catalogue', 'civic government pamphlet',
+    'academic paper', 'breathless manifesto', 'product keynote'
+  ],
+  aesthetics: [
+    'authentic 1990s web fidelity', 'polished modern SaaS', 'editorial minimalist',
+    'luxury fashion', 'brutalist'
+  ],
+  // label = short text shown on the chip; premise = full text fed to dispatch.
+  premises: [
+    { pillar: '1997↔2026',     label: "What's New on the Web!",            premise: "What's New on the Web! — a weekly bulletin reporting modern phenomena as 1996 novelties" },
+    { pillar: '1997↔2026',     label: "Dial-up download calculator",       premise: "A dial-up download-time calculator for modern media" },
+    { pillar: '1997↔2026',     label: "GeoCities shrine to A.I.",          premise: 'A GeoCities shrine to "Artificial Intelligence"' },
+    { pillar: '1997↔2026',     label: "Singularity bunker prep",           premise: "Y2K-style bunker prep, but for the Singularity" },
+    { pillar: '1997↔2026',     label: "Info Superhighway manual",          premise: "The Information Superhighway official driver's manual" },
+    { pillar: 'pop_nostalgia', label: "Discontinued-snacks Hall of Fame",  premise: "A Hall of Fame for discontinued snacks and sodas" },
+    { pillar: 'pop_nostalgia', label: "History of hold music",             premise: "A museum retrospective on the history of hold music" },
+    { pillar: 'pop_nostalgia', label: "Backyard-grill Dad doc",            premise: "A nature documentary on the backyard-grill Dad" },
+    { pillar: 'pop_nostalgia', label: '"New Car" fragrance',               premise: 'A luxury fragrance campaign for the scent "New Car"' },
+    { pillar: 'pop_nostalgia', label: 'Semiotics of "we need to talk"',    premise: 'A paper on the semiotics of the "we need to talk" text' },
+    { pillar: 'sv_vc',         label: "Fund for companies meant to fail",  premise: "A venture firm that backs companies destined to fail" },
+    { pillar: 'sv_vc',         label: "Disrupting disruption",             premise: "A pitch deck for a startup disrupting disruption" },
+    { pillar: 'sv_vc',         label: "Thought-leader who restates ideas", premise: "A thought-leader site for a man who restates others' ideas" },
+    { pillar: 'sv_vc',         label: "The Wi-Fi password guy",            premise: "A Series A deck for a guy who remembers your Wi-Fi passwords" },
+    { pillar: 'absurd',        label: "The People v. Gravity",             premise: "A class-action microsite: The People v. Gravity" },
+    { pillar: 'absurd',        label: "Gas-station bathroom guide",        premise: "A Michelin-style guide to gas-station bathrooms" },
+    { pillar: 'absurd',        label: "Apple keynote for a rock",          premise: "An Apple-style keynote launching a rock" },
+    { pillar: 'absurd',        label: "Secret HOA newsletter",             premise: "An editorial magazine that is secretly an HOA newsletter" }
+  ]
+};
 
-// Fisher-Yates, then take 4. Fresh draw on every dialog open so the user
-// sees variety. (The full set is small enough that random duplicates
-// across opens are common and fine.)
-function pickRandomExamples(n) {
-  const a = EXAMPLE_PROMPTS.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+// Draw a pillar by weight (used per shown slot so the on-screen mix skews to
+// pillarWeights — distribution over the shown set, not per-button dice).
+function pickWeightedPillar() {
+  const w = COMPOSER_CONFIG.pillarWeights;
+  let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0);
+  for (const k of Object.keys(w)) { r -= w[k]; if (r <= 0) return k; }
+  return Object.keys(w)[0];
+}
+
+// Sample n distinct premises; each slot's pillar drawn by weight, premise
+// random within that pillar. Falls back to fill if a pillar runs dry.
+function sampleHelperChips(n) {
+  const used = new Set(), out = [];
+  let guard = 0;
+  while (out.length < n && guard++ < 200) {
+    const pillar = pickWeightedPillar();
+    const pool = COMPOSER_CONFIG.premises.filter(p => p.pillar === pillar && !used.has(p.label));
+    if (!pool.length) continue;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    used.add(pick.label); out.push(pick);
   }
-  return a.slice(0, n);
+  for (const p of COMPOSER_CONFIG.premises) {
+    if (out.length >= n) break;
+    if (!used.has(p.label)) { used.add(p.label); out.push(p); }
+  }
+  return out;
+}
+
+// Tap dispatch: premise × random register × random aesthetic. Fresh pair each
+// tap; avoid immediately repeating the last (register, aesthetic) combination.
+let _lastRegAes = null;
+function dispatchBriefFor(premise) {
+  const R = COMPOSER_CONFIG.registers, A = COMPOSER_CONFIG.aesthetics;
+  let reg, aes, key, guard = 0;
+  do {
+    reg = R[Math.floor(Math.random() * R.length)];
+    aes = A[Math.floor(Math.random() * A.length)];
+    key = reg + ' | ' + aes;
+  } while (key === _lastRegAes && ++guard < 12);
+  _lastRegAes = key;
+  const art = (w) => /^[aeiou]/i.test(w) ? 'an' : 'a';   // "an" before vowel-initial
+  return `${premise}, rendered as ${art(reg)} ${reg}, in ${art(aes)} ${aes} style.`;
 }
 
 function populateExampleChips() {
   const host = document.getElementById('ai-examples');
   if (!host) return;
-  const promptEl = document.getElementById('ai-prompt');
   host.innerHTML = '';
-  pickRandomExamples(4).forEach(item => {
+  sampleHelperChips(4).forEach(item => {
     const el = document.createElement('div');
     el.className = 'ai-example';
-    el.textContent = item.label;
-    el.dataset.example = item.prompt;
+    el.textContent = item.label;          // short, on-strategy label
+    el.dataset.pillar = item.pillar;
     el.addEventListener('click', () => {
-      if (promptEl) { promptEl.value = item.prompt; promptEl.focus(); }
+      // Tap → dispatch premise × random register × random aesthetic straight to
+      // the generator. Register/aesthetic stay hidden; the output surprises.
+      generateWithAI({ brief: dispatchBriefFor(item.premise), fromChip: true });
     });
     host.appendChild(el);
   });
@@ -2708,8 +2772,10 @@ async function generateWithAI(opts) {
     return;
   }
 
-  // Persist for B1 edit-mode prefill on next dialog open.
-  lsSet('lastPrompt', userBrief);
+  // Persist for B1 edit-mode prefill on next dialog open — but NOT for helper-
+  // button dispatches: the expanded register/aesthetic brief must never surface
+  // in the textarea (Part A keeps it hidden; only typed prompts are remembered).
+  if (!opts.fromChip) lsSet('lastPrompt', userBrief);
 
   aiInFlight = true;
   abortReason = null;

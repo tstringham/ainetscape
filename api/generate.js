@@ -28,7 +28,7 @@ import {
   makeCache, logEvent, makeShareSlug,
   makeAuthorToken, hashAuthorToken,
   insertPagePlaceholder, completePageRow,
-  getAiWaterfall
+  getAiWaterfall, findByContentHash
 } from './_shared.js';
 import { postProcessPexels } from './_pexels.js';
 // Unsplash post-processor is retained as the standby failover. The
@@ -43,6 +43,11 @@ import { postProcessUnsplash } from './_unsplash.js';
 // falling back to DEFAULT_WATERFALL). runWaterfall attempts each runnable rung
 // in order, buffered, falling through on error/timeout/empty body.
 import { runWaterfall, resolveRunnableWaterfall, DEFAULT_WATERFALL } from './_ai_providers.js';
+
+// Part B — publish-time uniqueness. computeContentHash() fingerprints the
+// generated HTML's structural skeleton (image URLs / dates / counters stripped)
+// so true structural dupes can be detected and re-rolled at publish.
+import { contentHash as computeContentHash } from './_dedup.js';
 
 // Provider waterfall timing. Each rung is buffered (not streamed) so we can
 // fall through on failure; the function maxDuration is 300s (vercel.json), so
@@ -270,82 +275,95 @@ export default async function handler(req, res) {
     let usage       = null;
     let usedModel   = null;
 
-    const wf = await runWaterfall({
-      order: runnable,
-      systemPrompt: SYSTEM_PROMPT,
-      userContent: 'Brief:\n\n' + brief,
-      maxTokens: MAX_TOKENS,
-      perRungTimeoutMs: PER_RUNG_TIMEOUT_MS,
-      deadlineMs: WATERFALL_DEADLINE_MS,
-      isClientGone: () => clientGone,
-      log: (m) => console.log('[waterfall]', m)
-    });
+    // ---- Generate, with publish-time uniqueness re-roll (Part B) ----
+    // Generation stays free; uniqueness is enforced at PUBLISH only, and only
+    // when we're actually publishing (sharing on + placeholder landed). On a
+    // structural-duplicate collision we silently re-roll the WHOLE generation,
+    // bounded to 3 attempts; a 4th is surfaced regardless so the user never
+    // sees an error or a duplicate. The collision check hits Mongo, so it's a
+    // no-op on preview (no Mongo) — generation simply publishes once.
+    let event, finalBody, wasRefusal = false, contentHash = null;
+    const dedupActive = sharingEnabled && placeholderOk;
+    const MAX_DEDUP_ATTEMPTS = 3;
 
-    accumulated = wf.text || '';
-    stopReason  = wf.stopReason || null;
-    usage       = wf.usage || null;
-    usedModel   = wf.model || null;
-
-    if (!accumulated) {
-      // Every runnable rung errored, timed out, or returned nothing usable.
-      // Mirror the old single-provider failure path: log once, return 502.
-      console.error('[waterfall] all rungs exhausted —', JSON.stringify(wf.attempts));
-      try {
-        await logEvent({
-          ip, event: 'ai_generation_failed', brief, ref,
-          duration_ms: Date.now() - startedAt,
-          referrer: req.headers.referer || null,
-          user_agent: req.headers['user-agent'] || null
-        });
-      } catch (_) { /* logger gave up; 502 still goes out */ }
-      return res.status(502).json({
-        error: 'The generation service is temporarily unavailable. Please try again.'
+    for (let attempt = 1; attempt <= MAX_DEDUP_ATTEMPTS + 1; attempt++) {
+      const wf = await runWaterfall({
+        order: runnable,
+        systemPrompt: SYSTEM_PROMPT,
+        userContent: 'Brief:\n\n' + brief,
+        maxTokens: MAX_TOKENS,
+        perRungTimeoutMs: PER_RUNG_TIMEOUT_MS,
+        deadlineMs: WATERFALL_DEADLINE_MS,
+        isClientGone: () => clientGone,
+        log: (m) => console.log('[waterfall]', m)
       });
-    }
 
-    // Classify the event before sending anything — drives both the response
-    // body and which event we log.
-    const wasRefusal = accumulated.startsWith('REFUSED::');
-    let event;
-    if (clientGone) {
-      event = 'ai_disconnected';
-    } else if (wasRefusal) {
-      event = 'ai_refused';
-    } else {
-      event = 'ai_generation_completed';
-    }
+      accumulated = wf.text || '';
+      stopReason  = wf.stopReason || null;
+      usage       = wf.usage || null;
+      usedModel   = wf.model || null;
 
-    // Image substitution runs ONLY on successful HTML output — refusals
-    // are short literal strings, disconnects mean nobody's listening. If
-    // substitution throws (e.g. network blip resolving a query), fall back
-    // to the unsubstituted HTML so the user still gets a page rather than
-    // a 500. Individual photo failures already degrade to CSS fallback
-    // blocks inside the post-processor.
-    //
-    // Two-pass for the transition:
-    //   1. Pexels — primary, current pipeline. The system prompt teaches
-    //      <img data-pexels="query">; the resolver fans out to the Pexels
-    //      search API with per_page=15 random pick.
-    //   2. Unsplash — legacy / standby failover. Short-circuits when no
-    //      [UNSPLASH:...] tokens are present (the common case post-cutover).
-    //      Retained so older pages can still be retroactively repaired and
-    //      so we can flip the primary in a hurry if Pexels rate-limits us.
-    let finalBody = accumulated;
-    if (event === 'ai_generation_completed') {
-      try {
-        finalBody = await postProcessPexels(finalBody);
-      } catch (err) {
-        console.error('[pexels] post-processing threw — keeping the page',
-          'unsubstituted rather than losing the generation:', err && err.message);
-      }
-      if (finalBody.includes('[UNSPLASH:')) {
+      if (!accumulated) {
+        // Every runnable rung errored, timed out, or returned nothing usable.
+        console.error('[waterfall] all rungs exhausted —', JSON.stringify(wf.attempts));
         try {
-          finalBody = await postProcessUnsplash(finalBody);
+          await logEvent({
+            ip, event: 'ai_generation_failed', brief, ref,
+            duration_ms: Date.now() - startedAt,
+            referrer: req.headers.referer || null,
+            user_agent: req.headers['user-agent'] || null
+          });
+        } catch (_) { /* logger gave up; 502 still goes out */ }
+        return res.status(502).json({
+          error: 'The generation service is temporarily unavailable. Please try again.'
+        });
+      }
+
+      // Classify before sending — drives both the response body and the event.
+      wasRefusal = accumulated.startsWith('REFUSED::');
+      event = clientGone ? 'ai_disconnected'
+            : wasRefusal  ? 'ai_refused'
+            :               'ai_generation_completed';
+
+      // Image substitution runs ONLY on successful HTML output. Pexels primary,
+      // Unsplash legacy failover (short-circuits when no [UNSPLASH:] tokens).
+      // On a throw, keep the unsubstituted HTML rather than losing the page.
+      finalBody = accumulated;
+      if (event === 'ai_generation_completed') {
+        try {
+          finalBody = await postProcessPexels(finalBody);
         } catch (err) {
-          console.error('[unsplash] legacy post-processing threw — leaving the',
-            'remaining placeholders inline:', err && err.message);
+          console.error('[pexels] post-processing threw — keeping the page',
+            'unsubstituted rather than losing the generation:', err && err.message);
+        }
+        if (finalBody.includes('[UNSPLASH:')) {
+          try {
+            finalBody = await postProcessUnsplash(finalBody);
+          } catch (err) {
+            console.error('[unsplash] legacy post-processing threw — leaving the',
+              'remaining placeholders inline:', err && err.message);
+          }
         }
       }
+
+      // Uniqueness gate — only for real, publishable pages, only with Mongo.
+      // Refusals/disconnects are never deduped.
+      if (event !== 'ai_generation_completed' || !dedupActive) break;
+      contentHash = computeContentHash(finalBody);
+      let collision = false;
+      try {
+        collision = !!(await findByContentHash(contentHash));
+      } catch (err) {
+        console.error('[dedup] pre-write hash check failed — publishing without',
+          're-roll:', err && err.message);
+      }
+      if (!collision) break;                            // unique → publish
+      if (attempt > MAX_DEDUP_ATTEMPTS) {               // exhausted → surface
+        console.warn('[dedup] re-roll exhausted after', MAX_DEDUP_ATTEMPTS,
+          'structural-duplicate collisions — surfacing attempt', attempt);
+        break;
+      }
+      console.log('[dedup] structural duplicate on attempt', attempt, '— re-rolling');
     }
 
     // Headers + body written together at the end. Done now (rather than
@@ -397,13 +415,39 @@ export default async function handler(req, res) {
           page_title: pageTitle,
           data: cachePayload,
           duration_ms: Date.now() - startedAt,
+          contentHash,
           verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null
         });
         completionOk = true;
       } catch (err) {
-        console.error('[CRITICAL] /p/' + shareSlug + ' — completion update',
-          'failed; row will stay ai_generation_pending and /p/:slug will',
-          '404 via the in-character page:', err.message);
+        // Duplicate-key error = a concurrent publish claimed this exact
+        // contentHash between our pre-write check and this write (the partial
+        // unique index firing). The body is already sent, so we can't re-roll;
+        // re-save the row WITHOUT the hash so the page still publishes rather
+        // than 404-ing on its share link. The pre-write check + bounded re-roll
+        // covers the common case; this only catches the rare simultaneous race.
+        const msg = (err && err.message || '') + ' ' + (err && err.cause && err.cause.message || '');
+        const dup = /E11000|duplicate key/i.test(msg);
+        if (dup) {
+          console.warn('[dedup] contentHash race on /p/' + shareSlug,
+            '— re-saving without hash so the page still publishes:', err.message);
+          try {
+            await completePageRow({
+              share_slug: shareSlug, event, body_html: finalBody || null,
+              page_title: pageTitle, data: cachePayload,
+              duration_ms: Date.now() - startedAt,
+              verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null
+            });
+            completionOk = true;
+          } catch (err2) {
+            console.error('[CRITICAL] /p/' + shareSlug + ' — hash-less completion',
+              'retry also failed:', err2 && err2.message);
+          }
+        } else {
+          console.error('[CRITICAL] /p/' + shareSlug + ' — completion update',
+            'failed; row will stay ai_generation_pending and /p/:slug will',
+            '404 via the in-character page:', err.message);
+        }
       }
     } else {
       // Either sharing is off or the placeholder failed. No row to update —

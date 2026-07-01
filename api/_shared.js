@@ -365,3 +365,10 @@ export async function getAiWaterfall() {
   const { getAiWaterfall: _get } = await import('./_db.js');
   return _get();
 }
+
+// Publish-time dedup pre-check (read, no retry harness — on failure the caller
+// publishes without a re-roll). Lazy-imports _db.js, same contract as above.
+export async function findByContentHash(hash) {
+  const { findByContentHash: _find } = await import('./_db.js');
+  return _find(hash);
+}

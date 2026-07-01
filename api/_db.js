@@ -51,6 +51,28 @@ async function getDb() {
       { expireAfterSeconds: 24 * 60 * 60, name: 'unsplash_ttl_idx' }
     );
   } catch (_) { /* index may already exist; ignore */ }
+
+  // Part B — publish-time uniqueness. PARTIAL unique index on contentHash:
+  // unique only where the field EXISTS, so legacy rows without a hash never
+  // collide on a missing value. Built in its own guard: if it fails (e.g.
+  // pre-existing duplicate hashes), REPORT loudly and continue — never drop or
+  // mutate data. The publish path also pre-checks via findByContentHash, so
+  // dedup still works even if the index can't build.
+  try {
+    await db.collection('generations').createIndex(
+      { contentHash: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { contentHash: { $exists: true } },
+        name: 'content_hash_unique_idx'
+      }
+    );
+  } catch (err) {
+    console.error('[CRITICAL] content_hash_unique_idx failed to build — likely',
+      'pre-existing duplicate contentHash values. NOT dropping/mutating data.',
+      'err:', err && (err.message || err));
+  }
+
   return db;
 }
 
@@ -59,6 +81,18 @@ export async function findBySlug(slug) {
   if (!slug) return null;
   const d = await getDb();
   return d.collection('generations').findOne({ share_slug: slug });
+}
+
+// Part B — publish-time dedup pre-check: any existing row sharing this
+// structural contentHash? Returns the colliding row's slug (or null). Global
+// (every row that has the field), matching the partial unique index above.
+export async function findByContentHash(hash) {
+  if (!hash) return null;
+  const d = await getDb();
+  return d.collection('generations').findOne(
+    { contentHash: String(hash) },
+    { projection: { share_slug: 1, _id: 0 } }
+  );
 }
 
 // ---- Gallery queries ----
@@ -162,7 +196,7 @@ export async function insertPagePlaceholder({
 }
 
 export async function completePageRow({
-  share_slug, event, body_html, page_title, data, duration_ms, verdict
+  share_slug, event, body_html, page_title, data, duration_ms, verdict, contentHash
 }) {
   if (!share_slug) throw new Error('completePageRow requires share_slug');
   const d = await getDb();
@@ -175,6 +209,7 @@ export async function completePageRow({
     setFields.body_size_bytes = setFields.body_html.length;
   }
   if (page_title) setFields.page_title = String(page_title).slice(0, 200);
+  if (contentHash) setFields.contentHash = String(contentHash);
   if (data && data.model) setFields.model = data.model;
   if (data && data.usage) {
     setFields.input_tokens = data.usage.input_tokens || 0;
