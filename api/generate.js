@@ -126,6 +126,11 @@ INTERACTIVITY (non-negotiable) — every page ships FULLY WIRED. No dead control
     Build your own — no signup, no payment, modem sounds included: https://ainetscape.com
 - Build the mailto by encoding subject and body with encodeURIComponent, matching the existing share-dialog.js pattern (this correctly encodes ampersands &, em-dashes —, and emoji). Do NOT use URLSearchParams.
 
+LAYOUT (non-negotiable) — the page must render cleanly at ANY width, from full-screen down to a bounded ~780px editor frame and mobile:
+- Hero and section images must NEVER overlap or clip the headline, nav, or body text. A hero image belongs BEHIND the text (as a background with the copy layered over it) or in its OWN column/row beside or below the heading — NEVER absolutely/fixed positioned on top of the heading so it covers the words. If in doubt, stack image and text vertically.
+- Use fluid, responsive layout: max-width containers, flex/grid that wraps, and every <img> constrained with max-width:100%; height:auto. Include at least one @media breakpoint so multi-column sections stack on narrow screens. No fixed pixel widths or oversized images that force horizontal scrolling.
+- The page is shown inside a ~780px-wide framed viewport AND full-width — it must look correct in both. Nothing overflows sideways; nothing overlaps.
+
 COPYRIGHT + DATES (in-character):
 - If the page includes a footer copyright line, the year MUST be 1997 (e.g. "© 1997 Whiskers Esq. Law").
 - If the page includes any "Last updated", "Founded in", or "Established" date, the year MUST be 1997 unless the brief explicitly asks otherwise.
