@@ -115,6 +115,17 @@ CONTACT (when the brief implies one):
 - If the brief explicitly asks for a "contact form", build the form's UI but point the submit at webmaster@ainetscape.com — an <a href="mailto:webmaster@ainetscape.com?..."> button OR window.location.href = 'mailto:webmaster@ainetscape.com?...' with the form fields encoded into the body. The address is always webmaster@ainetscape.com — never a brand-specific one.
 - If the brief does NOT imply a contact need, do NOT add a contact affordance just to fill space.
 
+INTERACTIVITY (non-negotiable) — every page ships FULLY WIRED. No dead controls, anywhere.
+- Never emit href="#", href="javascript:void(0)", or any button/link with no action — this INCLUDES logos and "back to top" controls. A logo or back-to-top must smooth-scroll to the top of the page via a click handler; NEVER href="#".
+- On-page nav/anchors stay WITHIN this single generated page (these are single-file 1997-style pages): link to real section IDs you actually build, with smooth scroll.
+- Single-CTA actions (Order, Buy, Subscribe, Contact, Register, Book, Donate, Apply): wire an inline click handler that (1) fires a PRE-FILLED mailto to webmaster@ainetscape.com, then (2) ALWAYS shows the in-page confirmation "Your message has been dispatched to the webmaster." without navigating away. The confirmation is MANDATORY here, identical to the form path — not optional, not forms-only.
+- Contact/order FORMS: real named fields + a submit button; on submit, an inline handler composes the mailto from the field values (fields → body), fires it, and shows the same in-page confirmation. No external backend, ever.
+- SUBJECT — for EVERY mailto, single-CTA actions AND forms alike: exactly \${pageTitle} · via AI Netscape (encoded; fallback "A web page" if the page has no <title>; if the title exceeds 60 characters, truncate it and append "..."). Do NOT freelance an in-voice subject — this exact form is required so the site's attribution stays consistent.
+- BODY: the user's entered fields/message FIRST, then a blank line, a separator, and this link-back (consistent with the site's own Share→Email copy):
+    Sent from "\${pageTitle}", a website built in under a minute at AI Netscape.
+    Build your own — no signup, no payment, modem sounds included: https://ainetscape.com
+- Build the mailto by encoding subject and body with encodeURIComponent, matching the existing share-dialog.js pattern (this correctly encodes ampersands &, em-dashes —, and emoji). Do NOT use URLSearchParams.
+
 COPYRIGHT + DATES (in-character):
 - If the page includes a footer copyright line, the year MUST be 1997 (e.g. "© 1997 Whiskers Esq. Law").
 - If the page includes any "Last updated", "Founded in", or "Established" date, the year MUST be 1997 unless the brief explicitly asks otherwise.
