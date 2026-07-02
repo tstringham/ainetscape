@@ -1686,6 +1686,14 @@ function toggleSound(e) {
   soundMuted = !soundMuted;
   try { localStorage.setItem('ainetscape-sound-muted', soundMuted ? '1' : '0'); } catch (_) {}
   renderSoundToggle();
+  // Drive the audio path both ways so the toggle round-trips mid-build:
+  //   mute   → kill scheduled tones + pending timers (instant silence, even mid-handshake)
+  //   unmute → resume the carrier for the rest of an in-flight build (never when idle)
+  if (soundMuted) {
+    stopModemAll();
+  } else if (aiInFlight) {
+    startHumLoop();
+  }
 }
 
 (function wireSoundToggle() {
@@ -2293,17 +2301,28 @@ function playDisconnect(success) {
   } catch (_) {}
 }
 
+// Soft carrier hum, looped while a build is in flight. Hoisted to module scope
+// (out of playModemSequence) so the speaker toggle can RESTART it on unmute. The
+// guard makes it safe to call anytime: it no-ops against a finished build, a muted
+// speaker, or a reduceMotion user — so an idle or muted click never spins up a
+// stray loop. First tick fires after `delayMs` (the handshake length on the initial
+// call, 0 when resumed by an unmute so the carrier comes back immediately).
+function startHumLoop(delayMs = 0) {
+  if (!aiInFlight || reduceMotion || soundMuted) return;
+  const tick = () => {
+    if (!aiInFlight || reduceMotion || soundMuted) return;
+    try { modem.hum(4); } catch (_) {}
+    modemTimers.push(setTimeout(tick, 3800));
+  };
+  modemTimers.push(setTimeout(tick, delayMs));
+}
+
 // Play the handshake, then loop a soft carrier hum if the request runs long.
 function playModemSequence() {
   if (reduceMotion || soundMuted) return;
   modem.play().then(durSec => {
     const durMs = (durSec || 7.5) * 1000;
-    const humLoop = () => {
-      if (!aiInFlight || reduceMotion || soundMuted) return;
-      try { modem.hum(4); } catch (_) {}
-      modemTimers.push(setTimeout(humLoop, 3800));
-    };
-    modemTimers.push(setTimeout(humLoop, durMs));
+    startHumLoop(durMs);   // first carrier tick lands after the handshake finishes
   }).catch(err => {
     // Surface to console so future audio failures aren't invisible.
     console.warn('Modem audio failed to start:', err);
