@@ -5,6 +5,9 @@ node_modules/
 .DS_Store
 .env*.local
 
+# Claude Code local tooling config (settings, hooks) — not part of the product.
+.claude/
+
 # Generated at build time by scripts/build_ga.mjs
 public/ga.js
 
