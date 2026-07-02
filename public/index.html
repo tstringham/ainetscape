@@ -2943,7 +2943,7 @@ async function generateWithAI(opts) {
     if (refusedDetected) {
       trackEvent('ai_compose_refused', { duration_ms: Date.now() - generationStartedAt });
       stopGenerationFx(false);
-      showRefusalDialog();
+      showRefusalDialog(userBrief);
       return;
     }
 
@@ -3050,23 +3050,29 @@ function renderBuild(htmlText, originalBrief) {
 }
 
 // ---- Refusal dialog ----
-// Server returned `REFUSED::reason`. We never show the reason text to the
-// user — the in-character message is the whole explanation. The actual
-// reason is logged server-side to MongoDB as `ai_refused` for analytics.
+// Server returned `REFUSED::reason` (rare clear-harm / restricted-category brief).
+// We never show the model's reason to the user — it's logged server-side
+// (ai_refused). Instead we surface a light, in-character switchboard line and
+// RE-PROMPT: the composer stays OPEN with the user's brief intact so they can edit
+// and try a different page. Never a modern "content policy" banner (4th-wall break).
 const REFUSAL_LINES = [
-  'The line dropped on this one. The modem says it cannot help with that. Try a different brief?',
-  'Our switchboard operator declined to connect this call. Please try a different request.',
-  'Connection rejected by the host. Please try a different brief.'
+  'The operator cannot complete that connection. Try dialing a different page.',
+  'Switchboard says no can do on that one, friend — reword the brief and we’ll try the line again.',
+  'That number is out of service on this exchange. Edit your request and redial.',
+  'The modem took one whiff of that request and hung up. Give it a different page and try again.',
+  'Our operator has, regretfully, unplugged that line. Try a different brief and we’ll reconnect you.'
 ];
-function showRefusalDialog() {
+function showRefusalDialog(userBrief) {
   const msg = REFUSAL_LINES[Math.floor(Math.random() * REFUSAL_LINES.length)];
-  closeAIDialog();
-  openCustomDialog('AI Composer',
-    '<div style="font-size:11px; padding:4px 0; max-width:380px;">' +
-      escapeHTML(msg) +
-    '</div>',
-    [{ label: 'OK', primary: true }]
-  );
+  // Re-prompt, don't dead-end: restore the prompt view with their brief kept and
+  // selected (first keystroke replaces), and show the switchboard line as status.
+  resetAIDialogToPrompt();
+  const p = document.getElementById('ai-prompt');
+  if (p) {
+    if (userBrief) p.value = userBrief;
+    try { p.focus(); if (p.value) p.select(); } catch (_) {}
+  }
+  setAIStatus(msg);
 }
 
 // ---- Hard-timeout dialog (5-minute ceiling reached) ----
