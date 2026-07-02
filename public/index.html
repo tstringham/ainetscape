@@ -661,6 +661,11 @@
     height: 16px;
     display: flex;
     align-items: center;
+    /* Sit above the transparent modal backdrop (z-100) so the mute toggle
+       stays clickable while a generation modal is open — a click here mutes
+       the modem, it never falls through to the backdrop's dismiss handler. */
+    position: relative;
+    z-index: 101;
   }
   .status-sound:hover { background: var(--face-lt); }
   .status-sound:active { border-color: var(--hi) var(--sh) var(--sh) var(--hi); }
@@ -794,6 +799,9 @@
   .ai-loading { display: flex; flex-direction: column; gap: 10px; padding: 6px 2px; }
   .ai-loading-row { display: flex; align-items: center; font-size: 12px; }
   .ai-loading-line { font-weight: bold; }
+  /* In-modal mute toggle — same speaker glyph as the status bar, pushed to
+     the right edge of the loading row, directly above the progress bar. */
+  .status-sound.ai-mute { margin-left: auto; height: 18px; padding: 0 6px; flex-shrink: 0; }
   .ai-progress {
     height: 16px;
     border: 1px solid;
@@ -1657,15 +1665,24 @@ let soundMuted = (function () {
   return reduceMotion;
 })();
 
-function renderSoundToggle() {
-  const btn = document.getElementById('sound-toggle');
+function applySoundToggleState(btn) {
   if (!btn) return;
   btn.classList.toggle('muted', soundMuted);
   btn.setAttribute('aria-pressed', soundMuted ? 'true' : 'false');
   btn.title = soundMuted ? 'Sound off (click to unmute)' : 'Sound on (click to mute)';
 }
 
-function toggleSound() {
+// One shared boolean, two surfaces: the status-bar speaker and the in-modal
+// toggle both reflect the same soundMuted state. Any element carrying id
+// 'sound-toggle' or 'ai-mute-toggle' is kept in sync here.
+function renderSoundToggle() {
+  applySoundToggleState(document.getElementById('sound-toggle'));
+  applySoundToggleState(document.getElementById('ai-mute-toggle'));
+}
+
+function toggleSound(e) {
+  // Stop the click here so it can never reach a backdrop / dismiss handler.
+  if (e && e.stopPropagation) e.stopPropagation();
   soundMuted = !soundMuted;
   try { localStorage.setItem('ainetscape-sound-muted', soundMuted ? '1' : '0'); } catch (_) {}
   renderSoundToggle();
@@ -1930,8 +1947,17 @@ document.querySelectorAll('[data-close]').forEach(el =>
 document.querySelectorAll('.modal-backdrop').forEach(bg => {
   bg.addEventListener('click', e => {
     if (e.target !== bg) return;
-    if (bg.id === 'dlg-ai') closeAIDialog();
-    else bg.classList.remove('open');
+    if (bg.id === 'dlg-ai') {
+      // No light-dismiss while a build is in flight. The backdrop is a
+      // transparent, full-viewport layer (z-100) sitting over the whole
+      // chrome, so a stray click anywhere outside the dialog box lands
+      // here — that must NEVER abort an active generation. Only the
+      // in-modal Cancel button stops a build.
+      if (aiInFlight) return;
+      closeAIDialog();
+    } else {
+      bg.classList.remove('open');
+    }
   });
 });
 
@@ -2671,8 +2697,18 @@ function clearLoadingTimers() { loadingTimers.forEach(clearTimeout); loadingTime
 function renderLoadingState() {
   aiDialogBody.innerHTML =
     '<div class="ai-loading">' +
-      '<div class="ai-loading-row"><span class="ai-spinner"></span>' +
-      '<span class="ai-loading-line" id="ai-loading-line">Dialing 1-800-AINETSCAPE...</span></div>' +
+      '<div class="ai-loading-row">' +
+        '<span class="ai-spinner"></span>' +
+        '<span class="ai-loading-line" id="ai-loading-line">Dialing 1-800-AINETSCAPE...</span>' +
+        '<button class="status-sound ai-mute" id="ai-mute-toggle" type="button" title="Sound on (click to mute)" aria-pressed="false" aria-label="Toggle modem sound">' +
+          '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+            '<polygon class="spk-body" points="3,9 3,15 7,15 12,19 12,5 7,9"/>' +
+            '<path class="spk-wave" d="M15 9.5a3.5 3.5 0 0 1 0 5"/>' +
+            '<path class="spk-wave" d="M17.5 7a7 7 0 0 1 0 10"/>' +
+            '<line class="spk-slash" x1="3" y1="4" x2="21" y2="20"/>' +
+          '</svg>' +
+        '</button>' +
+      '</div>' +
       '<div class="ai-progress"><div class="ai-progress-bar" id="ai-progress-bar"></div></div>' +
     '</div>';
   aiDialogFooter.innerHTML = '<button class="dlg-btn" id="ai-cancel">Cancel</button>';
@@ -2680,6 +2716,9 @@ function renderLoadingState() {
   if (bar) bar.style.width = '0%';
   const c = document.getElementById('ai-cancel');
   if (c) c.addEventListener('click', cancelGeneration);
+  const mute = document.getElementById('ai-mute-toggle');
+  if (mute) mute.addEventListener('click', toggleSound);
+  renderSoundToggle();  // sync the freshly-mounted in-modal toggle to shared state
 }
 
 function setLoadingLine(msg) {
