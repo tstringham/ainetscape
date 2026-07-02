@@ -2896,6 +2896,7 @@ async function generateWithAI(opts) {
       try { const j = await resp.json(); serverMsg = (j && j.error) || ''; } catch (_) {}
       const e = new Error('HTTP ' + resp.status + (serverMsg ? ': ' + serverMsg : ''));
       e.status = resp.status;
+      e.serverMsg = serverMsg;
       throw e;
     }
 
@@ -3112,8 +3113,15 @@ function handleAIError(err, originalBrief) {
   let msg;
   if (err && err.name === 'AbortError') {
     msg = 'The connection timed out — the line dropped. Please try again.';
-  } else if (m.indexOf('429') !== -1) {
-    msg = 'The line is busy — too many callers right now. Please hang up and try again in a minute.';
+  } else if ((err && err.status === 429) || m.indexOf('429') !== -1) {
+    // The server sends scope-accurate copy in the 429 body (per-minute → "a
+    // minute", per-hour → "this hour / later", per-day → "tomorrow", global →
+    // "an hour") — already in switchboard voice. Surface it verbatim so the
+    // stated reset window matches reality; only fall back to a generic line if
+    // the body was missing.
+    msg = (err && err.serverMsg)
+      ? err.serverMsg
+      : 'The switchboard is swamped — please give the line a rest and try again shortly.';
   } else if (m.indexOf('401') !== -1 || m.indexOf('403') !== -1) {
     msg = 'The host refused the connection. Our support desk has been notified.';
   } else if (m.indexOf('500') !== -1 || m.indexOf('502') !== -1 || m.indexOf('503') !== -1) {
