@@ -3201,6 +3201,25 @@ document.addEventListener('keydown', function (e) {
     openOperatorDialog();
   }
 });
+// Mac-safe fallback trigger. Control+Option+O is unreliable on macOS: Option+O
+// is a dead key (emits ø) and the combo is frequently swallowed by the OS/IME,
+// so e.code === 'KeyO' may never arrive. Double-clicking the decorative
+// status-bar clock opens the IDENTICAL Operator Console. The clock is a
+// non-interactive text node — no href, no other listener — so this gesture
+// can't collide with any browser/OS shortcut or link behavior (unlike the
+// brand logo, an <a href="/"> where every modifier+click is already claimed by
+// the browser). sessionStorage flow is unchanged; both paths call the same
+// openOperatorDialog(). Kept alongside the shortcut, not a replacement.
+(function wireOperatorClockTrigger() {
+  const clock = document.getElementById('status-clock');
+  if (!clock) return;
+  clock.addEventListener('dblclick', function () {
+    // Drop the incidental text selection the double-click leaves on the clock.
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.removeAllRanges) sel.removeAllRanges();
+    openOperatorDialog();
+  });
+})();
 (function wireOperatorConsole() {
   const openBtn = document.getElementById('operator-open');
   const closeBtn = document.getElementById('operator-close');
