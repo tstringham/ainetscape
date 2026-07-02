@@ -15,16 +15,19 @@
 //   5. Removes the data-pexels attribute so the rendered page has no trace
 //      of the placeholder
 //
-// Fallback chain (per brief):
-//   Pexels result   → use it
-//   429 / empty     → Lorem Picsum (https://picsum.photos/seed/{q}/{w}/{h})
-//   Picsum unusable → in-character text placeholder block
+// Fallback chain:
+//   Pexels result        → use it
+//   503 / 429 (throttle) → RETRY with exponential backoff (most recover)
+//   genuine miss/empty   → IN-CHARACTER 1997 placeholder (beveled "still loading
+//                          over 28.8k" tile). NEVER a random photo — a random
+//                          substitute was the old Picsum bug that put mismatched
+//                          stock shots on pages.
 //
-// No cache by design — pooled random-pick is what produces variety across
-// sites. If Pexels ever returns near-identical top sets per query (variety
-// fails the smoke test), the brief reserves the right to reinstate a
-// per-query pool cache (~24h, still random-pick per site). The code below
-// is shaped so wrapping resolveQuery() in a cache helper is a 5-line edit.
+// Throttle resilience: resolves at most PEXELS_CONCURRENCY queries at once (so a
+// page's images don't burst the shared key into 503s) and caches SUCCESSFUL
+// query→photo results for PEXELS_CACHE_TTL_MS on the warm instance to cut repeat
+// calls. Misses are never cached, so a transient throttle can't stick a query to
+// the placeholder. The random pick from the 15-result pool still drives variety.
 //
 // Attribution: per brief, "Photos via Pexels" lives in the Copyright footer
 // page (already added to content/copyright.md). We don't clutter generated
@@ -32,12 +35,35 @@
 //
 // Files prefixed with "_" are not routed as endpoints by Vercel.
 
-import crypto from 'crypto';
-
 const PEXELS_API_BASE = 'https://api.pexels.com/v1';
 const PEXELS_PER_PAGE = 15;        // pool size for random pick
-const PICSUM_W = 1200;             // default fallback image dimensions
-const PICSUM_H = 800;
+
+// Throttle-resilience (fixes throttle-induced mismatched images): retry transient
+// 503/429 before giving up, cap per-page concurrency so a page's images don't
+// burst the shared key, and cache resolved queries briefly on the warm instance.
+const PEXELS_MAX_RETRIES   = 3;               // extra attempts on 503/429
+const PEXELS_RETRY_BASE_MS = 400;             // backoff: 400ms, 800ms, 1600ms
+const PEXELS_CONCURRENCY   = 3;               // max simultaneous Pexels calls per page
+const PEXELS_CACHE_TTL_MS  = 10 * 60 * 1000;  // per-query SUCCESS cache (warm instance)
+const _pexelsCache = new Map();               // query -> { photo, at }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const backoffMs = (attempt) => PEXELS_RETRY_BASE_MS * Math.pow(2, attempt);
+
+// Run fn over items with at most `limit` in flight; preserves input order. A
+// throwing fn degrades that slot to null (-> the in-character placeholder).
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      try { out[i] = await fn(items[i]); } catch (_) { out[i] = null; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) || 1 }, worker));
+  return out;
+}
 
 // Structured placeholder: <img ... data-pexels="query" ...>.
 // Captures pre-attrs, the quote character, the query, and post-attrs so we
@@ -62,14 +88,13 @@ export async function postProcessPexels(html) {
   for (const m of html.matchAll(BARE_PEXELS_RE)) queries.add(m[1].trim());
   if (queries.size === 0) return html;
 
-  // Parallel resolve. Individual failures degrade to per-query fallbacks;
-  // a single bad query never poisons the rest of the page.
+  // Resolve with BOUNDED concurrency (was all-parallel) so a single page's images
+  // don't burst the shared key into 503s. A failed query degrades to the
+  // in-character placeholder; it never poisons the rest of the page.
   const queryList = [...queries];
-  const settled = await Promise.allSettled(queryList.map(resolveQuery));
+  const results = await mapLimit(queryList, PEXELS_CONCURRENCY, resolveQuery);
   const photoByQuery = new Map();
-  queryList.forEach((q, i) => {
-    photoByQuery.set(q, settled[i].status === 'fulfilled' ? settled[i].value : null);
-  });
+  queryList.forEach((q, i) => photoByQuery.set(q, results[i]));
 
   // Pass 1: structured <img data-pexels="..."> → real <img> with preserved attrs.
   let out = html.replace(IMG_PEXELS_RE, (_match, pre, _quote, query, post) => {
@@ -102,25 +127,27 @@ export async function postProcessPexels(html) {
 }
 
 // ============================================================
-// Resolver — Pexels primary, Picsum fallback, null on total miss.
+// Resolver — Pexels only. On a genuine miss (after retries) returns null and the
+// caller renders an IN-CHARACTER period placeholder. It NEVER substitutes a
+// random photo — that was the Picsum bug where a throttle miss became a
+// mismatched modern stock shot.
 // ============================================================
 async function resolveQuery(rawQuery) {
   const query = String(rawQuery || '').trim();
   if (!query) return null;
 
-  // Pexels primary.
-  const pex = await fetchFromPexels(query);
-  if (pex) return pex;
+  // Warm-instance SUCCESS cache: skip the API for a repeat query (shaves calls
+  // off the shared key). Misses are NOT cached, so a transient throttle can't
+  // stick a query to the placeholder — the next attempt retries it fresh.
+  const cached = _pexelsCache.get(query);
+  if (cached && (Date.now() - cached.at) < PEXELS_CACHE_TTL_MS) return cached.photo;
 
-  // Picsum fallback — seeded by a stable hash of the query so the same
-  // missed query always falls back to the same Picsum photo (helps with
-  // re-generation idempotency and OG-card consistency).
-  const seed = sha256Hex(query).slice(0, 10);
-  return {
-    url: `https://picsum.photos/seed/${seed}/${PICSUM_W}/${PICSUM_H}`,
-    avgColor: null,
-    source: 'picsum'
-  };
+  const pex = await fetchFromPexels(query);   // retries 503/429 internally
+  if (pex) {
+    _pexelsCache.set(query, { photo: pex, at: Date.now() });
+    return pex;
+  }
+  return null;   // genuine miss -> caller renders the in-character placeholder
 }
 
 async function fetchFromPexels(query) {
@@ -137,30 +164,33 @@ async function fetchFromPexels(query) {
     `&per_page=${PEXELS_PER_PAGE}` +
     `&orientation=landscape`;
 
-  let resp;
-  try {
-    resp = await fetch(url, {
-      headers: {
-        // Pexels does NOT use the Bearer prefix — the key is the value verbatim.
-        'Authorization': key
+  // Retry transient throttles (503/429) with short exponential backoff before
+  // giving up — the probe showed most throttle misses recover on retry, which
+  // keeps the in-character placeholder rare.
+  let resp = null;
+  for (let attempt = 0; attempt <= PEXELS_MAX_RETRIES; attempt++) {
+    try {
+      // Pexels does NOT use the Bearer prefix — the key is the value verbatim.
+      resp = await fetch(url, { headers: { 'Authorization': key } });
+    } catch (err) {
+      if (attempt < PEXELS_MAX_RETRIES) { await sleep(backoffMs(attempt)); continue; }
+      console.error('[pexels] request failed for', JSON.stringify(query), '—', err && err.message);
+      return null;
+    }
+    if (resp.status === 503 || resp.status === 429) {
+      if (attempt < PEXELS_MAX_RETRIES) {
+        const ra = Number(resp.headers.get('retry-after'));
+        await sleep(Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 3000) : backoffMs(attempt));
+        continue;
       }
-    });
-  } catch (err) {
-    console.error('[pexels] search request failed for',
-      JSON.stringify(query), '— err:', err && err.message);
-    return null;
+      console.error('[pexels]', resp.status, 'after', PEXELS_MAX_RETRIES, 'retries; query=', JSON.stringify(query));
+      return null;   // exhausted -> caller renders the in-character placeholder
+    }
+    break;   // 2xx or a non-retryable status — stop retrying
   }
 
-  if (resp.status === 429) {
-    // Rate-limited. Logged so we can correlate against traffic spikes
-    // and trip the Unsplash-primary failover at the right moment.
-    const retryAfter = resp.headers.get('retry-after');
-    console.error('[pexels] 429 rate-limited; query=', JSON.stringify(query),
-      'retry-after=', retryAfter);
-    return null;
-  }
-  if (!resp.ok) {
-    console.error('[pexels] search returned', resp.status, 'for', JSON.stringify(query));
+  if (!resp || !resp.ok) {
+    if (resp) console.error('[pexels] search returned', resp.status, 'for', JSON.stringify(query));
     return null;
   }
 
@@ -190,10 +220,6 @@ async function fetchFromPexels(query) {
 // ============================================================
 // Helpers — local to this module, no shared escape utility yet.
 // ============================================================
-function sha256Hex(s) {
-  return crypto.createHash('sha256').update(String(s)).digest('hex');
-}
-
 function extractAttr(attrStr, name) {
   const re = new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i');
   const m = attrStr.match(re);
@@ -221,24 +247,30 @@ function escapeHtml(s) {
 }
 function escapeAttr(s) { return escapeHtml(s); }
 
-// In-character fallback for the rare case where both Pexels AND Picsum fail.
-// Deterministic gradient from the query hash so the empty state reads as
-// "intentional placeholder" rather than randomised glitch.
+// In-character placeholder shown when Pexels genuinely misses (after retries).
+// A period beveled "broken image / still coming in over the modem" tile — an
+// obvious 1997 chrome element, NEVER a random modern photo. This is the core
+// fix: a miss must never become a mismatched stock shot.
 function buildFallbackBlock(alt, query) {
-  const hash = crypto.createHash('sha256').update(String(query || alt || '')).digest();
-  const hue  = Math.floor(hash[0] * 360 / 256);
-  const hue2 = (hue + 40) % 360;
-  const label = escapeHtml(alt || query || '');
+  const caption = escapeHtml(String(alt || query || 'Image').slice(0, 60));
   const ariaLabel = escapeAttr(alt || query || 'image');
   return (
     `<figure class="pexels-image pexels-image--fallback" style="margin:0;">` +
-      `<div role="img" aria-label="${ariaLabel}" ` +
-        `style="width:100%;max-width:600px;aspect-ratio:3/2;` +
-              `background:linear-gradient(135deg,hsl(${hue},45%,55%),hsl(${hue2},45%,40%));` +
-              `display:flex;align-items:center;justify-content:center;` +
-              `color:#fff;font-family:Georgia,serif;font-style:italic;` +
-              `padding:1em;text-align:center;box-sizing:border-box;">` +
-        `${label}` +
+      `<div role="img" aria-label="${ariaLabel}" style="` +
+        `width:100%;max-width:600px;aspect-ratio:3/2;box-sizing:border-box;` +
+        `background:#c0c0c0;border:2px solid;border-color:#808080 #ffffff #ffffff #808080;` +
+        `display:flex;flex-direction:column;align-items:center;justify-content:center;` +
+        `gap:9px;padding:14px;text-align:center;` +
+        `font-family:'MS Sans Serif','Geneva','Tahoma',sans-serif;color:#000080;">` +
+        // period broken-image glyph: framed picture (sun + hills) with a red X
+        `<svg width="44" height="38" viewBox="0 0 44 38" aria-hidden="true" style="display:block;flex:none;">` +
+          `<rect x="1" y="1" width="42" height="36" fill="#ffffff" stroke="#000000"/>` +
+          `<circle cx="13" cy="12" r="3.5" fill="#ffd633" stroke="#000000"/>` +
+          `<path d="M2 31 L15 19 L23 25 L32 16 L43 27" fill="none" stroke="#1a7a1a" stroke-width="1.5"/>` +
+          `<path d="M4 5 L15 17 M15 5 L4 17" stroke="#cc0000" stroke-width="2.5"/>` +
+        `</svg>` +
+        `<div style="font-size:11px;font-weight:bold;">Image loading over 28.8 kbps&hellip;</div>` +
+        `<div style="font-size:10px;color:#404040;max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${caption}</div>` +
       `</div>` +
     `</figure>`
   );
