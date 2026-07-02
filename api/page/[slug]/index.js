@@ -44,7 +44,11 @@ export default async function handler(req, res) {
   try {
     const { findBySlug } = await import('../../_db.js');
     const doc = await findBySlug(slug);
-    if (!doc || !doc.body_html) {
+    // is_public:false is a takedown — the row stays in the DB (recoverable) but
+    // the direct URL 404s, same as a missing body. A takedown is now a single
+    // flag flip (no need to blank body_html), and hidden rows stay off both the
+    // gallery feed AND their own /p/<slug> URL.
+    if (!doc || !doc.body_html || doc.is_public === false) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.status(404).send(notFoundHtml(slug));
     }
