@@ -153,6 +153,40 @@ export async function countGalleryPages(sort = 'recent') {
   return d.collection('generations').countDocuments(filter);
 }
 
+// ---- Admin gallery management (api/admin/gallery.js) ----
+// List completed AI pages for the admin panel — public (is_public !== false) or
+// hidden (is_public === false). Paginated (skip/limit) for BOUNDED reads: the
+// caller fetches limit+1 to detect hasMore, so no per-load countDocuments scan.
+// Index-backed by gallery_recent_idx (source, event, is_public, ts).
+export async function listGalleryRowsAdmin({ hidden = false, skip = 0, limit = 50 } = {}) {
+  const d = await getDb();
+  const filter = {
+    source: 'ai',
+    event: 'ai_generation_completed',
+    is_public: hidden ? false : { $ne: false },
+    body_html: { $exists: true, $nin: [null, ''] }
+  };
+  return d.collection('generations')
+    .find(filter, { projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, is_public: 1, _id: 0 } })
+    .sort({ ts: -1 })
+    .skip(Math.max(0, skip))
+    .limit(Math.max(1, Math.min(200, limit)))
+    .toArray();
+}
+
+// Toggle a gallery row's public flag: hide (false) drops it from the gallery AND
+// 404s /p/<slug> via the page handler; restore (true) brings it back. Reversible;
+// this NEVER deletes a row. Returns matched/modified counts.
+export async function setPagePublic(slug, isPublic) {
+  if (!slug) return { matched: 0, modified: 0 };
+  const d = await getDb();
+  const r = await d.collection('generations').updateOne(
+    { share_slug: String(slug), source: 'ai' },
+    { $set: { is_public: !!isPublic } }
+  );
+  return { matched: r.matchedCount || 0, modified: r.modifiedCount || 0 };
+}
+
 // ============================================================
 // Two-stage write helpers — fix for the recurring /p/:slug 404.
 // ============================================================

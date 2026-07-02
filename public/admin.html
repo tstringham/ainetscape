@@ -25,9 +25,25 @@
   .reorder button { padding: 2px 8px; }
   #status { margin-top: 14px; min-height: 18px; font-size: 12px; }
   section { margin-top: 18px; }
-  .hidden { display: none; }
+  .hidden { display: none !important; }
   hr { border: 0; border-top: 1px solid #ccc; margin: 16px 0; }
   small { color: #666; }
+  /* Gallery management */
+  .gtoolbar { display: flex; align-items: center; gap: 14px; margin: 10px 0 6px; }
+  .grow { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border: 1px solid #ccc; margin: 5px 0; background: #f6f6f6; font-size: 12px; }
+  .grow.gone { opacity: .5; background: #ececec; }
+  .grow .gtitle { flex: 1 1 auto; min-width: 60px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+  .grow .gtitle.untitled { color: #999; font-style: italic; font-weight: 400; }
+  .grow .gslug { color: #888; font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  .grow .gmeta { color: #666; white-space: nowrap; font-size: 11px; }
+  .grow a.gtitle { color: #0000cc; }
+  .grow .gremove { color: #9a3a2a; }
+  .grow .grestore { color: #2a6b2a; }
+  .cmodal { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .cbox { background: #fff; border: 2px solid; border-color: #fff #808080 #808080 #fff; padding: 16px 18px; max-width: 380px; box-shadow: 2px 2px 0 rgba(0,0,0,.3); }
+  .cbox p { margin: 0 0 14px; }
+  .cbtns { display: flex; gap: 8px; justify-content: flex-end; }
+  .cbtns .danger { background: #e8d0cc; }
 </style>
 </head>
 <body>
@@ -52,7 +68,28 @@
     </div>
   </section>
 
+  <section id="gallery" class="hidden">
+    <hr>
+    <h1 style="font-size:14px;">Gallery</h1>
+    <small>All published pages, newest first. Remove = hide (the page 404s and drops off the gallery). Reversible — nothing is deleted.</small>
+    <div class="gtoolbar">
+      <label style="font-weight:normal;"><input type="checkbox" id="show-hidden"> Show hidden rows</label>
+    </div>
+    <div id="glist"></div>
+    <div style="margin-top:10px;"><button id="gmore" style="display:none;">Load more</button></div>
+  </section>
+
   <div id="status"></div>
+
+  <div id="confirm-modal" class="cmodal hidden">
+    <div class="cbox">
+      <p id="confirm-msg"></p>
+      <div class="cbtns">
+        <button id="confirm-yes" class="danger">Hide it</button>
+        <button id="confirm-no">Cancel</button>
+      </div>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -146,6 +183,7 @@
       .then(function (res) {
         if (!res.ok) { setStatus('Error: ' + (res.j.error || 'failed'), 'warn'); return; }
         applyState(res.j);
+        loadGallery(0, false, false);
       })
       .catch(function (e) { setStatus('Network error: ' + e.message, 'warn'); });
   }
@@ -162,6 +200,91 @@
       })
       .catch(function (e) { setStatus('Network error: ' + e.message, 'warn'); });
   }
+
+  // ---- Gallery list + hide/restore ----
+  var GALLERY_ENDPOINT = '/api/admin/gallery';
+
+  function fmtDate(ts) {
+    if (!ts) return '—';
+    var d = new Date(ts);
+    return isNaN(d.getTime()) ? String(ts).slice(0, 10) : d.toISOString().slice(0, 10);
+  }
+
+  function galleryRow(row, hidden) {
+    var el = document.createElement('div'); el.className = 'grow';
+    var title = document.createElement('a');
+    title.className = 'gtitle' + (row.page_title ? '' : ' untitled');
+    title.textContent = row.page_title || 'untitled';
+    title.href = '/p/' + row.share_slug; title.target = '_blank'; title.rel = 'noopener';
+    var slug = document.createElement('span'); slug.className = 'gslug'; slug.textContent = row.share_slug;
+    var meta = document.createElement('span'); meta.className = 'gmeta';
+    meta.textContent = '▲' + (row.upvotes || 0) + ' · ' + (row.hits || 0) + ' hits · ' + fmtDate(row.ts);
+    var btn = document.createElement('button');
+    if (hidden) {
+      btn.className = 'grestore'; btn.textContent = 'Restore';
+      btn.addEventListener('click', function () { doToggle(row, 'restore', el); });
+    } else {
+      btn.className = 'gremove'; btn.textContent = 'Remove';
+      btn.addEventListener('click', function () {
+        openConfirm('Hide “' + (row.page_title || 'untitled') + '” from the gallery? It will 404 and can be restored.',
+          function () { doToggle(row, 'hide', el); });
+      });
+    }
+    el.appendChild(title); el.appendChild(slug); el.appendChild(meta); el.appendChild(btn);
+    return el;
+  }
+
+  function loadGallery(page, hidden, append) {
+    var url = GALLERY_ENDPOINT + '?page=' + page + (hidden ? '&hidden=1' : '');
+    if (!append) setStatus('Loading gallery…');
+    fetch(url, { headers: headers() })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { setStatus('Gallery load failed: ' + (res.j.error || ''), 'warn'); return; }
+        var host = $('glist');
+        if (!append) host.innerHTML = '';
+        (res.j.rows || []).forEach(function (row) { host.appendChild(galleryRow(row, res.j.hidden)); });
+        if (!append && (!res.j.rows || !res.j.rows.length)) {
+          host.innerHTML = '<div class="grow" style="color:#888;">No ' + (res.j.hidden ? 'hidden' : 'public') + ' rows.</div>';
+        }
+        var more = $('gmore');
+        more.style.display = res.j.hasMore ? '' : 'none';
+        more.setAttribute('data-next', String((res.j.page || 0) + 1));
+        $('gallery').classList.remove('hidden');
+        setStatus('', '');
+      })
+      .catch(function (e) { setStatus('Network error: ' + e.message, 'warn'); });
+  }
+
+  function doToggle(row, action, el) {
+    fetch(GALLERY_ENDPOINT, { method: 'POST', headers: headers(), body: JSON.stringify({ slug: row.share_slug, action: action }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { setStatus((action === 'hide' ? 'Hide' : 'Restore') + ' failed: ' + (res.j.error || ''), 'warn'); return; }
+        el.classList.add('gone');
+        var b = el.querySelector('button'); if (b) { b.disabled = true; b.textContent = action === 'hide' ? 'Hidden' : 'Restored'; }
+        setStatus((action === 'hide' ? 'Hidden' : 'Restored') + ' “' + (row.page_title || 'untitled') + '” (' + row.share_slug + ').', 'ok');
+        setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 900);
+      })
+      .catch(function (e) { setStatus('Network error: ' + e.message, 'warn'); });
+  }
+
+  // ---- Confirm modal ----
+  var _confirmYes = null;
+  function openConfirm(msg, onYes) {
+    $('confirm-msg').textContent = msg;
+    _confirmYes = onYes;
+    $('confirm-modal').classList.remove('hidden');
+  }
+  function closeConfirm() { $('confirm-modal').classList.add('hidden'); _confirmYes = null; }
+  $('confirm-yes').addEventListener('click', function () { var f = _confirmYes; closeConfirm(); if (f) f(); });
+  $('confirm-no').addEventListener('click', closeConfirm);
+  $('confirm-modal').addEventListener('click', function (e) { if (e.target === $('confirm-modal')) closeConfirm(); });
+
+  $('show-hidden').addEventListener('change', function () { loadGallery(0, $('show-hidden').checked, false); });
+  $('gmore').addEventListener('click', function () {
+    loadGallery(parseInt($('gmore').getAttribute('data-next'), 10) || 1, $('show-hidden').checked, true);
+  });
 
   $('load').addEventListener('click', load);
   $('reload').addEventListener('click', load);
