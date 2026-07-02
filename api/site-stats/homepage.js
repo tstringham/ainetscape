@@ -2,18 +2,25 @@
 //
 // GET endpoint that returns the homepage's live visitor count for the
 // starter doc's "This page has been visited N times" line. Side effect:
-// increments the counter once per IP per UTC day (Redis SETNX dedupe).
+// increments the counter once per page load (true 1997 per-load counter).
+//
+// The increment is deliberately NOT gated behind per-IP/day dedupe: that
+// gate (recordHomepageVisit) made the visible number freeze for any repeat
+// or return visitor, since their second+ load of the day took the read-only
+// path. Abuse is bounded by the rateLimit() below, not by dedupe. The write
+// is a plain siteStats $inc — it shares no helper, hash, or index with the
+// publish-time content-hash dedup (that path only ever writes `generations`).
 //
 // Response: { count: <int> }
 // Cache-Control: no-store. Caching this would freeze the counter; the
-// endpoint is cheap (one indexed Mongo lookup + one $inc when deduped).
+// endpoint is cheap (a single atomic $inc per request).
 //
 // First-time bootstrap: the underlying siteStats row is seeded at 420
 // in _db.js#incrementHomepageVisits when no doc exists yet, so a fresh
 // install reads 420 on its first call (the seed IS the visit's count,
 // not a +1 on top). See that helper for race-safety notes.
 
-import { getCallerIp, rateLimit, rateLimitMessage, recordHomepageVisit } from '../_shared.js';
+import { getCallerIp, rateLimit, rateLimitMessage } from '../_shared.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -39,17 +46,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { getHomepageVisitCount, incrementHomepageVisits } = await import('../_db.js');
+    const { incrementHomepageVisits } = await import('../_db.js');
 
-    let fresh = false;
-    try { fresh = await recordHomepageVisit(ip); } catch (_) {}
-
-    let count;
-    if (fresh) {
-      count = await incrementHomepageVisits();
-    } else {
-      count = await getHomepageVisitCount();
-    }
+    // Per-load increment, no dedupe gate. The $inc is atomic, so concurrent
+    // loads never lose a count, and it runs against whatever the row already
+    // holds — the value only ever moves up from its current floor, never
+    // resets or re-seeds an existing row.
+    const count = await incrementHomepageVisits();
 
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ count: Number(count) || 0 });
