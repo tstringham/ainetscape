@@ -24,7 +24,7 @@
 // ============================================================
 
 import {
-  getCallerIp, parseBody, rateLimit, rateLimitMessage,
+  getCallerIp, parseBody, rateLimit, rateLimitMessage, adminTokenValid,
   makeCache, logEvent, makeShareSlug,
   makeAuthorToken, hashAuthorToken,
   insertPagePlaceholder, completePageRow,
@@ -195,16 +195,25 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Brief too long (maximum ${MAX_BRIEF_LENGTH} characters).` });
   }
 
+  // Owner seeding bypass: a request carrying the valid ADMIN_EDIT_TOKEN in the
+  // x-admin-token header skips the per-IP caps (5/min · 20/hr · 40/day). The
+  // GLOBAL 200/hr ceiling is STILL enforced as the hard spend cap, and a
+  // wrong/absent token is silently treated as a normal caller (no error, no
+  // bypass). This does NOT relax any content restriction — REFUSED:: still fires.
+  const isAdmin = adminTokenValid(req);
   const rl = await rateLimit(ip, 'gen', {
     perMin:    RATE_LIMIT_PER_MIN,
     perHour:   GLOBAL_RATE_LIMIT_PER_HR,
     ipPerHour: IP_LIMIT_PER_HOUR,
-    ipPerDay:  IP_LIMIT_PER_DAY
+    ipPerDay:  IP_LIMIT_PER_DAY,
+    skipPerIp: isAdmin
   });
   if (!rl.allowed) {
     res.setHeader('Retry-After', String(rl.retryAfter));
     return res.status(429).json({ error: rateLimitMessage(rl.scope) });
   }
+  // Confirm to the composer that the operator line took (no secret echoed).
+  if (isAdmin) res.setHeader('x-admin-bypass', '1');
 
   // Sharing only "lights up" when Mongo is wired — without persistent
   // storage, /p/:slug would 404. Suppress the header in that case so the

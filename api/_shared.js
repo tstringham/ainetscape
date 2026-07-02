@@ -35,6 +35,24 @@ export function hashAuthorToken(token) {
 }
 
 // ============================================================
+// Admin shared-secret check. Same header + env var as the admin
+// endpoints (x-admin-token === ADMIN_EDIT_TOKEN), but constant-time and
+// non-throwing: a wrong/absent token — or an unset env var — returns
+// false and the caller is treated as a normal user. It NEVER errors and
+// NEVER grants a bypass on a bad token. Used by /api/generate to let the
+// owner skip the per-IP rate limit for seeding (the global ceiling still
+// applies). Keep this the ONLY gate that opens that path.
+// ============================================================
+export function adminTokenValid(req) {
+  const expected = process.env.ADMIN_EDIT_TOKEN;
+  const provided = req && req.headers && req.headers['x-admin-token'];
+  if (!expected || !provided) return false;
+  const a = Buffer.from(String(provided));
+  const b = Buffer.from(String(expected));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// ============================================================
 // IP + body extraction
 // ============================================================
 export function getCallerIp(req) {
@@ -70,48 +88,54 @@ const memGlobalBuckets = new Map();
 
 function memRateLimit(ip, kind, opts) {
   const now = Date.now();
-  const minStart = now - 60 * 1000;
   const hrStart  = now - 60 * 60 * 1000;
   const dayStart = now - 24 * 60 * 60 * 1000;
 
-  // Global hourly cap.
+  // Global hourly cap — always enforced, even for an admin bypass.
   const gBucket = (memGlobalBuckets.get(kind) || []).filter(t => t > hrStart);
   if (gBucket.length >= opts.perHour) {
     memGlobalBuckets.set(kind, gBucket);
     return { allowed: false, scope: 'global', retryAfter: 3600 };
   }
 
-  // Per-IP windows. Each is its own keyed array because the windows differ.
-  const ipMinKey  = `${kind}:min:${ip}`;
-  const ipHrKey   = `${kind}:hr:${ip}`;
-  const ipDayKey  = `${kind}:day:${ip}`;
-  const minBucket = (memIpBuckets.get(ipMinKey) || []).filter(t => t > minStart);
-  const hrBucket  = (memIpBuckets.get(ipHrKey)  || []).filter(t => t > hrStart);
-  const dayBucket = (memIpBuckets.get(ipDayKey) || []).filter(t => t > dayStart);
+  // Per-IP windows. Skipped entirely for an admin (opts.skipPerIp) — the
+  // request neither checks nor increments the per-IP buckets, so seeding
+  // volume never counts against a normal visitor's allowance.
+  if (!opts.skipPerIp) {
+    const minStart = now - 60 * 1000;
+    const ipMinKey  = `${kind}:min:${ip}`;
+    const ipHrKey   = `${kind}:hr:${ip}`;
+    const ipDayKey  = `${kind}:day:${ip}`;
+    const minBucket = (memIpBuckets.get(ipMinKey) || []).filter(t => t > minStart);
+    const hrBucket  = (memIpBuckets.get(ipHrKey)  || []).filter(t => t > hrStart);
+    const dayBucket = (memIpBuckets.get(ipDayKey) || []).filter(t => t > dayStart);
 
-  if (minBucket.length >= opts.perMin) {
-    return { allowed: false, scope: 'ip', retryAfter: 60 };
-  }
-  if (hrBucket.length >= opts.ipPerHour) {
-    return { allowed: false, scope: 'ip-hour', retryAfter: 3600 };
-  }
-  if (dayBucket.length >= opts.ipPerDay) {
-    return { allowed: false, scope: 'ip-day', retryAfter: 24 * 3600 };
-  }
+    if (minBucket.length >= opts.perMin) {
+      return { allowed: false, scope: 'ip', retryAfter: 60 };
+    }
+    if (hrBucket.length >= opts.ipPerHour) {
+      return { allowed: false, scope: 'ip-hour', retryAfter: 3600 };
+    }
+    if (dayBucket.length >= opts.ipPerDay) {
+      return { allowed: false, scope: 'ip-day', retryAfter: 24 * 3600 };
+    }
 
-  minBucket.push(now); hrBucket.push(now); dayBucket.push(now); gBucket.push(now);
-  memIpBuckets.set(ipMinKey, minBucket);
-  memIpBuckets.set(ipHrKey, hrBucket);
-  memIpBuckets.set(ipDayKey, dayBucket);
-  memGlobalBuckets.set(kind, gBucket);
+    minBucket.push(now); hrBucket.push(now); dayBucket.push(now);
+    memIpBuckets.set(ipMinKey, minBucket);
+    memIpBuckets.set(ipHrKey, hrBucket);
+    memIpBuckets.set(ipDayKey, dayBucket);
 
-  // Cheap LRU sweep on the per-IP map so a long-running instance doesn't
-  // accumulate keys for dead IPs forever.
-  if (memIpBuckets.size > 4000) {
-    for (const [k, v] of memIpBuckets) {
-      if (v[v.length - 1] < dayStart) memIpBuckets.delete(k);
+    // Cheap LRU sweep on the per-IP map so a long-running instance doesn't
+    // accumulate keys for dead IPs forever.
+    if (memIpBuckets.size > 4000) {
+      for (const [k, v] of memIpBuckets) {
+        if (v[v.length - 1] < dayStart) memIpBuckets.delete(k);
+      }
     }
   }
+
+  gBucket.push(now);
+  memGlobalBuckets.set(kind, gBucket);
   return { allowed: true };
 }
 
@@ -119,29 +143,37 @@ export async function rateLimit(ip, kind = 'gen', {
   perMin     = 5,    // per-IP, per-minute (burst limit)
   perHour    = 200,  // global, per-hour (hard ceiling across all callers)
   ipPerHour  = 20,   // per-IP, per-hour (sustained pacing cap)
-  ipPerDay   = 40    // per-IP, per-day (total-volume cap, defeats IP-rotation pacing)
+  ipPerDay   = 40,   // per-IP, per-day (total-volume cap, defeats IP-rotation pacing)
+  skipPerIp  = false // admin bypass: skip the three per-IP caps, KEEP the global one
 } = {}) {
-  const opts = { perMin, perHour, ipPerHour, ipPerDay };
+  const opts = { perMin, perHour, ipPerHour, ipPerDay, skipPerIp };
   const redis = getRedis();
   if (!redis) return memRateLimit(ip, kind, opts);
   try {
     const now = Date.now();
-    const ipMinKey  = `rl:${kind}:ip:min:${ip}:${Math.floor(now / 60000)}`;
-    const ipHrKey   = `rl:${kind}:ip:hr:${ip}:${Math.floor(now / 3600000)}`;
-    const ipDayKey  = `rl:${kind}:ip:day:${ip}:${Math.floor(now / 86400000)}`;
     const globalKey = `rl:${kind}:global:${Math.floor(now / 3600000)}`;
 
-    const ipMin = await redis.incr(ipMinKey);
-    if (ipMin === 1) await redis.expire(ipMinKey, 120);
-    if (ipMin > perMin) return { allowed: false, scope: 'ip', retryAfter: 60 };
+    // Per-IP caps. Skipped for an admin (skipPerIp): the request neither
+    // increments nor is checked against the per-IP buckets, so seeding
+    // volume never eats a normal visitor's allowance. The global ceiling
+    // below is still enforced as the hard spend cap.
+    if (!skipPerIp) {
+      const ipMinKey  = `rl:${kind}:ip:min:${ip}:${Math.floor(now / 60000)}`;
+      const ipHrKey   = `rl:${kind}:ip:hr:${ip}:${Math.floor(now / 3600000)}`;
+      const ipDayKey  = `rl:${kind}:ip:day:${ip}:${Math.floor(now / 86400000)}`;
 
-    const ipHr = await redis.incr(ipHrKey);
-    if (ipHr === 1) await redis.expire(ipHrKey, 7200);
-    if (ipHr > ipPerHour) return { allowed: false, scope: 'ip-hour', retryAfter: 3600 };
+      const ipMin = await redis.incr(ipMinKey);
+      if (ipMin === 1) await redis.expire(ipMinKey, 120);
+      if (ipMin > perMin) return { allowed: false, scope: 'ip', retryAfter: 60 };
 
-    const ipDay = await redis.incr(ipDayKey);
-    if (ipDay === 1) await redis.expire(ipDayKey, 86400 * 2);
-    if (ipDay > ipPerDay) return { allowed: false, scope: 'ip-day', retryAfter: 24 * 3600 };
+      const ipHr = await redis.incr(ipHrKey);
+      if (ipHr === 1) await redis.expire(ipHrKey, 7200);
+      if (ipHr > ipPerHour) return { allowed: false, scope: 'ip-hour', retryAfter: 3600 };
+
+      const ipDay = await redis.incr(ipDayKey);
+      if (ipDay === 1) await redis.expire(ipDayKey, 86400 * 2);
+      if (ipDay > ipPerDay) return { allowed: false, scope: 'ip-day', retryAfter: 24 * 3600 };
+    }
 
     const globalCount = await redis.incr(globalKey);
     if (globalCount === 1) await redis.expire(globalKey, 7200);
