@@ -111,10 +111,44 @@ async function importStatic(force) {
   console.log('Imported ' + done + ', already present ' + skipped + ', failed ' + failed + '.');
 }
 
+/**
+ * Load the env file the way the documented command assumes.
+ *
+ * `node scripts/build_thumbs.mjs` does not read a .env file -- node never has,
+ * and build_og.mjs never needed one, so the omission was invisible until this
+ * script wanted a database. The first run of the published instructions died
+ * twice on "MONGODB_URI is not set" with the file sitting right there.
+ *
+ * Only when the variable is not already set, so an explicit
+ * `MONGODB_URI=... node scripts/...` or a `vercel env`-wrapped run still wins.
+ * Quiet when the file is missing: that is a normal way to run this.
+ */
+function loadEnvFile() {
+  if (process.env.MONGODB_URI) return;
+  for (const name of ['.env.production.local', '.env.local']) {
+    const p = path.resolve(__dirname, '..', name);
+    if (!fs.existsSync(p)) continue;
+    try {
+      process.loadEnvFile(p);
+      if (process.env.MONGODB_URI) {
+        console.log('Loaded ' + name);
+        return;
+      }
+    } catch (_) { /* older node, or unreadable -- fall through to the error */ }
+  }
+}
+
 async function main() {
+  loadEnvFile();
+
   if (!process.env.MONGODB_URI) {
-    console.error('MONGODB_URI is not set. This writes thumbnails to the same');
-    console.error('database the gallery reads, so it needs the real connection.');
+    console.error('MONGODB_URI is not set, and no .env.production.local or');
+    console.error('.env.local in the project root supplied one.');
+    console.error('');
+    console.error('  vercel env pull --environment=production .env.production.local');
+    console.error('');
+    console.error('Note the --environment flag: `vercel env pull` alone downloads');
+    console.error('DEVELOPMENT variables, whatever you name the file.');
     process.exit(1);
   }
 
