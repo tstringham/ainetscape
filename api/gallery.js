@@ -131,7 +131,7 @@ function renderSiteOfTheWeek(p) {
   const hits = formatCount(p.hits);
   const date = formatGalleryDate(p.ts);
   const href = '/p/' + slug;
-  const thumb = microlinkThumbnailUrl(slug);
+  const thumb = thumbnailUrl(slug);
 
   return '<div class="sotw-box">' +
     '<div class="sotw-header">&#9733; SITE OF THE WEEK</div>' +
@@ -170,7 +170,7 @@ function renderCard(p) {
   const hits = formatCount(p.hits);
   const date = formatGalleryDate(p.ts);
   const href = '/p/' + slug;
-  const thumb = microlinkThumbnailUrl(slug);
+  const thumb = thumbnailUrl(slug);
 
   // Only the thumbnail and the title are links to /p/:slug. Everything
   // else in .gallery-stats is plain text. The upvote button POSTs to
@@ -242,14 +242,17 @@ function staticThumbUrl(slug) {
   return '/images/gallery/' + encodeURIComponent(slug) + '.png';
 }
 
-function microlinkThumbnailUrl(slug) {
-  // Same screenshot proxy as the OG card. 1200×800 viewport (3:2) for
-  // detail; browsers downscale to the ~240px card width. Microlink caches
-  // by URL so repeat visitors hit their CDN.
-  return 'https://api.microlink.io/'
-    + '?url=' + encodeURIComponent(SITE_ORIGIN + '/p/' + slug)
-    + '&screenshot=true&meta=false&embed=screenshot.url'
-    + '&viewport.width=1200&viewport.height=800';
+function thumbnailUrl(slug) {
+  // Our own endpoint, our own bytes. This was api.microlink.io -- a
+  // third-party screenshot proxy on a free daily quota, called fresh on every
+  // card render. On 20 September the quota ran out and every thumbnail in the
+  // gallery went to "Preview unavailable" at the same moment, from a cause
+  // invisible from inside the site.
+  //
+  // /api/thumb serves a stored PNG when one exists and a drawn placeholder
+  // when it does not, so this never 404s and the onerror path below is now
+  // only about genuine transport failure.
+  return '/api/thumb/' + encodeURIComponent(slug);
 }
 
 function serviceUnavailableHtml() {
