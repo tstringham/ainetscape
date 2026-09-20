@@ -1,0 +1,13 @@
+# ainetscape.com
+#
+# Crawl the pages. Skip the plumbing.
+
+User-agent: *
+Allow: /
+
+# Endpoints, not documents. These answer JSON, images and telemetry; a crawler
+# spending its budget here is a crawler not reading the gallery.
+Disallow: /api/
+Disallow: /p/*/stats
+
+Sitemap: https://ainetscape.com/sitemap.xml
