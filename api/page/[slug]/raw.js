@@ -77,8 +77,12 @@ export default async function handler(req, res) {
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Content-Security-Policy', SANDBOX);
-  // A published page does not change. Same lifetime the framed page uses.
-  res.setHeader('Cache-Control', 'public, max-age=86400');
+  // Same policy as the framed page: the CDN holds a day and is purged on
+  // deploy, the browser revalidates. prepareDocument rewrites this document
+  // at render -- it strips the model's form handlers and injects the
+  // dispatcher -- so what it returns changes when we deploy, even though the
+  // stored HTML behind it does not.
+  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=86400, stale-while-revalidate=3600');
   // Belt and braces: this document is meant to be framed by us and crawled,
   // never embedded elsewhere.
   res.setHeader('X-Robots-Tag', 'index, follow');

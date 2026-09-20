@@ -59,7 +59,21 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     // Generated pages are immutable — once a slug points at content, that
     // content doesn't change. Cache aggressively at the edge.
-    res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, immutable');
+    /*
+     * The CDN holds it for a day; the browser revalidates every time.
+     *
+     * This was `max-age=86400, immutable`, and `immutable` means a browser will
+     * not even ASK -- so a visitor who loaded a page before a deploy kept the
+     * old one for a full day with no way to know. That cost real confusion on
+     * 20 September: a fix shipped, the live HTML was verifiably correct, and
+     * the page on screen went on showing the old behaviour.
+     *
+     * The generated CONTENT is immutable. This wrapper is not -- its markup,
+     * its meta tags and the scripts it loads all change when we deploy. So the
+     * CDN keeps a day's copy and is purged on deploy, while the browser spends
+     * a conditional request and usually gets a 304.
+       */
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=86400, stale-while-revalidate=3600');
     return res.status(200).send(html);
   } catch (err) {
     console.error('Page lookup failed:', err);

@@ -15,7 +15,11 @@
   'use strict';
 
   var ENDPOINT = 'https://ainetscape.com/api/cta';
-  var CONFIRM_TEXT = 'Your message has been dispatched to the webmaster.';
+  // Thomas's pick. House voice: a 1997 support desk that has quietly become
+  // powerful and is not apologising for it.
+  var CONFIRM_TEXT = 'Filed to webmaster@ainetscape.com. Response times range '
+    + 'from four weeks to never. Thank you for your patience, which is not '
+    + 'optional.';
 
   // Canonical /p/<slug> URL, injected at generation time — location.href is
   // useless here (about:srcdoc inside the iframe).
@@ -54,32 +58,115 @@
     } catch (e) { /* fire-and-forget */ }
   }
 
+  /*
+   * The confirmation, as a 1997 JavaScript alert.
+   *
+   * This was a black toast in -apple-system/Segoe UI sliding up from the
+   * bottom: a 2020s pattern on a site whose entire product is that it is not
+   * from the 2020s.
+   *
+   * What it imitates now is specific -- a Navigator 4 `alert()`, not a generic
+   * grey dialog. Three details do that work and all three are period: the title
+   * bar reads "[JavaScript Application]", which is what Netscape actually put
+   * there and which nobody who used it has forgotten; a warning triangle sits
+   * left of the text rather than above it; and the OK button is the only way
+   * out. Colours and fonts match api/_chrome.js -- #c0c0c0, #000080, MS Sans
+   * Serif 11px -- because the window around it is doing the same thing, and two
+   * different 1997s read as a mistake rather than as a period.
+   *
+   * Dismissed by OK, Escape or the backdrop, and after 20 seconds regardless: a
+   * confirmation that can trap somebody is worse than one nobody reads.
+   */
   function showConfirm() {
     try {
       var id = '__ai-cta-confirm';
-      var existing = document.getElementById(id);
-      if (existing) return;
-      var box = document.createElement('div');
-      box.id = id;
-      box.setAttribute('role', 'status');
-      box.textContent = CONFIRM_TEXT;
-      box.style.cssText = [
-        'position:fixed', 'left:50%', 'bottom:24px', 'transform:translateX(-50%)',
-        'z-index:2147483647', 'max-width:90%', 'padding:12px 18px',
-        'background:#000', 'color:#fff',
-        'font:13px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Tahoma,sans-serif',
-        'border:2px solid #fff', 'box-shadow:0 2px 14px rgba(0,0,0,.5)',
-        'text-align:center', 'pointer-events:none'
+      if (document.getElementById(id)) return;
+
+      // Motif raised edge: light from the top-left, shadow bottom-right.
+      var RAISED = 'inset 1px 1px 0 #fff, inset -1px -1px 0 #000,' +
+        'inset 2px 2px 0 #dfdfdf, inset -2px -2px 0 #808080';
+
+      var wrap = document.createElement('div');
+      wrap.id = id;
+      wrap.setAttribute('role', 'alertdialog');
+      wrap.setAttribute('aria-label', 'Message sent');
+      wrap.style.cssText = [
+        'position:fixed', 'top:0', 'left:0', 'right:0', 'bottom:0',
+        'z-index:2147483647', 'background:rgba(0,0,0,.35)',
+        'display:flex', 'align-items:center', 'justify-content:center'
       ].join(';');
-      document.body.appendChild(box);
-      setTimeout(function () { try { box.parentNode && box.parentNode.removeChild(box); } catch (e) {} }, 6000);
+
+      var dlg = document.createElement('div');
+      dlg.style.cssText = [
+        'width:420px', 'max-width:88vw', 'background:#c0c0c0', 'color:#000',
+        'font:11px/1.5 "MS Sans Serif","Geneva","Tahoma",sans-serif',
+        'box-shadow:' + RAISED, 'padding:3px'
+      ].join(';');
+
+      var bar = document.createElement('div');
+      bar.style.cssText = [
+        'height:20px', 'background:#000080', 'color:#fff', 'font-weight:bold',
+        'display:flex', 'align-items:center', 'padding:0 5px', 'user-select:none'
+      ].join(';');
+      bar.textContent = '[JavaScript Application]';
+
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:16px;padding:20px 22px 10px;align-items:flex-start';
+
+      // The warning triangle, drawn rather than fetched: no request, nothing to
+      // 404, and it cannot be blocked.
+      var icon = document.createElement('div');
+      icon.setAttribute('aria-hidden', 'true');
+      icon.style.cssText = 'flex:0 0 32px;width:32px;height:32px';
+      icon.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32">' +
+        '<polygon points="16,2 31,29 1,29" fill="#ffd400" stroke="#000" stroke-width="1.5" ' +
+        'stroke-linejoin="round"/>' +
+        '<rect x="14.5" y="11" width="3" height="10" fill="#000"/>' +
+        '<rect x="14.5" y="23" width="3" height="3" fill="#000"/></svg>';
+
+      var body = document.createElement('div');
+      body.style.cssText = 'flex:1;padding-top:2px';
+      body.textContent = CONFIRM_TEXT;
+
+      var footer = document.createElement('div');
+      footer.style.cssText = 'padding:8px 22px 18px;text-align:center';
+
+      var ok = document.createElement('button');
+      ok.type = 'button';
+      ok.textContent = 'OK';
+      ok.style.cssText = [
+        'min-width:80px', 'height:24px', 'background:#c0c0c0', 'color:#000',
+        'font:11px "MS Sans Serif","Geneva","Tahoma",sans-serif',
+        'cursor:pointer', 'border:0', 'padding:0 12px', 'box-shadow:' + RAISED
+      ].join(';');
+      ok.addEventListener('mousedown', function () {
+        ok.style.boxShadow = 'inset 1px 1px 0 #000, inset -1px -1px 0 #fff,' +
+          'inset 2px 2px 0 #808080, inset -2px -2px 0 #dfdfdf';
+      });
+
+      function close() {
+        try { wrap.parentNode && wrap.parentNode.removeChild(wrap); } catch (e) {}
+        try { document.removeEventListener('keydown', onKey, true); } catch (e) {}
+      }
+      function onKey(e) { if (e.key === 'Escape' || e.key === 'Enter') close(); }
+
+      ok.addEventListener('click', close);
+      wrap.addEventListener('click', function (e) { if (e.target === wrap) close(); });
+      document.addEventListener('keydown', onKey, true);
+      setTimeout(close, 20000);
+
+      row.appendChild(icon);
+      row.appendChild(body);
+      footer.appendChild(ok);
+      dlg.appendChild(bar);
+      dlg.appendChild(row);
+      dlg.appendChild(footer);
+      wrap.appendChild(dlg);
+      document.body.appendChild(wrap);
+      try { ok.focus(); } catch (e) {}
     } catch (e) { /* never let the confirmation throw */ }
   }
 
-  // A submission is held for a moment before sending. A legacy page's own submit
-  // handler may follow up by building a mailto: (see __aiMailto below); its
-  // subject and body then fold into this same payload, so the webmaster gets one
-  // email carrying both the raw fields and the page's composed message.
   var pending = null;
   var lastDispatchAt = 0;
   function flushPending() {
