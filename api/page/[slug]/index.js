@@ -109,13 +109,15 @@ export function decorate(html, slug, doc) {
   const isArtifact = !!(doc && doc.source === 'ai' && doc.is_public !== false);
 
   // Generated document -> sandboxed iframe. allow-scripts keeps the page's own
-  // JS alive (smooth-scroll, mailto CTA handlers); allow-popups +
-  // allow-top-navigation-by-user-activation let the mailto: fire on click; NO
+  // JS alive (smooth-scroll, CTA handlers); allow-popups +
+  // allow-top-navigation-by-user-activation let a page's ordinary links open; NO
   // allow-same-origin, so the iframe is an opaque origin isolated from the chrome.
+  // Mail launches never happen from inside the frame: prepareDocument routes a
+  // legacy page's mailto: link or location assignment through the CTA dispatcher.
   const iframe =
     '<iframe class="page-frame" title="' + safeTitle + '" ' +
     'sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-forms allow-modals" ' +
-    'srcdoc="' + srcdocEscape(injectDefensiveStyle(html)) + '"></iframe>';
+    'srcdoc="' + srcdocEscape(prepareDocument(html, slug)) + '"></iframe>';
 
   const statusExtra = isArtifact ? artifactStatus(slug) : platformStatus();
   const scripts = isArtifact
@@ -141,14 +143,37 @@ function srcdocEscape(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
-// Inject a defensive style into the generated document so no image can force
-// horizontal overflow inside the bounded ~780px frame (neutralizes e.g. the
-// oversized below-fold image on MX2AloZw0B).
-function injectDefensiveStyle(html) {
-  const style = '<style>img,svg,video,canvas{max-width:100%!important;height:auto;}</style>';
-  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + style);
-  if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => m + style);
-  return style + html;
+// Render-time preparation of the stored document:
+//  1. a defensive style so no image can force horizontal overflow inside the
+//     bounded ~780px frame (neutralizes e.g. the oversized below-fold image on
+//     MX2AloZw0B);
+//  2. legacy mail launches are routed through the CTA dispatcher. Pages generated
+//     before the dispatcher existed either link to mailto: or assign
+//     window.location.href = 'mailto:...'. Navigating a sandboxed frame to an
+//     external scheme is handled inconsistently by browsers and drags the
+//     visitor into their mail client; the dispatcher posts the same subject and
+//     body to /api/cta instead. The assignment is redirected to __aiLoc.href
+//     (a head stub parks any early value; cta-dispatch.js takes over on load),
+//     and the dispatcher tag is added when the stored document lacks it.
+const CTA_DISPATCH_SRC = 'https://ainetscape.com/cta-dispatch.js';
+const LOC_STUB = '<script>window.__aiLoc={set href(v){if(/^\\s*mailto:/i.test(String(v))){'
+  + '(window.__aiMailQueue=window.__aiMailQueue||[]).push(String(v));}else{window.location.href=v;}},'
+  + 'get href(){return window.location.href;}};</script>';
+function prepareDocument(html, slug) {
+  let out = String(html == null ? '' : html);
+  out = out.replace(/window\.location\.href(\s*)=(?!=)/g, '__aiLoc.href$1=');
+  const head = '<style>img,svg,video,canvas{max-width:100%!important;height:auto;}</style>' + LOC_STUB;
+  if (/<head[^>]*>/i.test(out)) out = out.replace(/<head[^>]*>/i, (m) => m + head);
+  else if (/<html[^>]*>/i.test(out)) out = out.replace(/<html[^>]*>/i, (m) => m + head);
+  else out = head + out;
+  if (!out.includes(CTA_DISPATCH_SRC)) {
+    const tag = '<script src="' + CTA_DISPATCH_SRC + '" data-cta-page="https://ainetscape.com/p/'
+      + encodeURIComponent(String(slug || '')) + '" defer></script>';
+    if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, () => tag + '</body>');
+    else if (/<\/html>/i.test(out)) out = out.replace(/<\/html>/i, () => tag + '</html>');
+    else out = out + tag;
+  }
+  return out;
 }
 
 const SPEAKER_SVG =

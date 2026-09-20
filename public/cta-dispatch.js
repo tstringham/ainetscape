@@ -1,6 +1,7 @@
 /* AI Netscape — generated-page CTA / contact dispatcher.
  *
- * Injected into every generated page by api/generate.js as:
+ * Injected into every generated page by api/generate.js (and into pages generated
+ * before it existed by api/page/[slug]/index.js at render time) as:
  *   <script src="https://ainetscape.com/cta-dispatch.js"
  *           data-cta-page="https://ainetscape.com/p/<slug>" defer></script>
  *
@@ -75,7 +76,22 @@
     } catch (e) { /* never let the confirmation throw */ }
   }
 
+  // A submission is held for a moment before sending. A legacy page's own submit
+  // handler may follow up by building a mailto: (see __aiMailto below); its
+  // subject and body then fold into this same payload, so the webmaster gets one
+  // email carrying both the raw fields and the page's composed message.
+  var pending = null;
+  var lastDispatchAt = 0;
+  function flushPending() {
+    if (!pending) return;
+    var p = pending; pending = null;
+    send(p.payload);
+  }
+  function pageHasOwnConfirmation() {
+    try { return /dispatched to the webmaster/i.test(document.body.textContent || ''); } catch (e) { return false; }
+  }
   function dispatch(triggerEl, label, form) {
+    lastDispatchAt = Date.now();
     var payload = {
       title: (document.title || '').slice(0, 140),
       url: pageUrl(),
@@ -83,8 +99,9 @@
         .replace(/\s+/g, ' ').trim().slice(0, 140),
       fields: form ? collectFields(form) : {}
     };
-    send(payload);
-    showConfirm();
+    if (pending) clearTimeout(pending.timer);
+    pending = { payload: payload, timer: setTimeout(flushPending, 200) };
+    if (!pageHasOwnConfirmation()) showConfirm();
   }
 
   // Public API for single-CTA buttons/links not inside a form:
@@ -94,6 +111,77 @@
     dispatch(el, label, form || null);
     return false; // prevent navigation / native submit
   };
+
+  // ---- Legacy pages. Pages generated before the dispatcher existed launch mail
+  // with a mailto: link or by assigning window.location.href. The share page
+  // rewrites those assignments to __aiLoc.href (see api/page/[slug]/index.js) and
+  // this block turns both forms into a dispatch, so the visitor never leaves the
+  // page and the webmaster still receives the submission. The mailto subject and
+  // body carry whatever the page collected, so they travel as fields.
+  var lastMail = { href: '', t: 0 };
+  function parseMailto(href) {
+    var out = { subject: '', body: '' };
+    try {
+      var q = href.indexOf('?'); if (q < 0) return out;
+      href.slice(q + 1).split('&').forEach(function (kv) {
+        var i = kv.indexOf('=');
+        var k = decodeURIComponent((i < 0 ? kv : kv.slice(0, i)).replace(/\+/g, ' ')).toLowerCase();
+        var v = decodeURIComponent((i < 0 ? '' : kv.slice(i + 1)).replace(/\+/g, ' '));
+        if (k === 'subject' || k === 'body') out[k] = v;
+      });
+    } catch (e) { /* malformed query: send what we have */ }
+    return out;
+  }
+  window.__aiMailto = function (href) {
+    href = String(href == null ? '' : href).trim();
+    if (!/^mailto:/i.test(href)) return false;
+    var now = Date.now();
+    if (href === lastMail.href && now - lastMail.t < 2000) return true; // one click reaching us twice
+    lastMail = { href: href, t: now };
+    var m = parseMailto(href);
+    if (pending) {
+      // Same submission as the form the auto-wire is holding: enrich it, send once.
+      if (m.subject) {
+        pending.payload.fields.subject = m.subject;
+        if (pending.payload.action === 'Form submission') pending.payload.action = m.subject.slice(0, 140);
+      }
+      if (m.body) pending.payload.fields.body = m.body;
+      return true;
+    }
+    if (now - lastDispatchAt < 2000) return true; // straggler after that window: already delivered
+    var fields = {};
+    if (m.subject) fields.subject = m.subject;
+    if (m.body) fields.body = m.body;
+    send({
+      title: (document.title || '').slice(0, 140),
+      url: pageUrl(),
+      action: (m.subject || 'Email the webmaster').replace(/\s+/g, ' ').trim().slice(0, 140),
+      fields: fields
+    });
+    if (!pageHasOwnConfirmation()) showConfirm();
+    return true;
+  };
+  // Assignment target the share page substitutes for window.location.href.
+  var loc = {};
+  try {
+    Object.defineProperty(loc, 'href', {
+      get: function () { return window.location.href; },
+      set: function (v) { if (!window.__aiMailto(v)) window.location.href = v; }
+    });
+  } catch (e) { loc = window.location; }
+  window.__aiLoc = loc;
+  // Anything assigned before this script loaded was parked by the head stub.
+  try { (window.__aiMailQueue || []).forEach(function (h) { window.__aiMailto(h); }); window.__aiMailQueue = []; } catch (e) {}
+  // mailto: links: dispatch instead of navigating the frame. Capture phase, but the
+  // page's own click handlers still run (they usually print the confirmation).
+  document.addEventListener('click', function (e) {
+    var t = e.target; while (t && t.nodeType === 1 && t.tagName !== 'A') t = t.parentNode;
+    if (!t || t.tagName !== 'A') return;
+    var h = (t.getAttribute('href') || '').trim();
+    if (!/^mailto:/i.test(h)) return;
+    e.preventDefault();
+    window.__aiMailto(h);
+  }, true);
 
   // Auto-wire EVERY form: any contact/order/signup form is delivered to the
   // webmaster on submit even if the model didn't add a handler.
