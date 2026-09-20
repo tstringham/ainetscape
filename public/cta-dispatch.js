@@ -119,6 +119,12 @@
   // page and the webmaster still receives the submission. The mailto subject and
   // body carry whatever the page collected, so they travel as fields.
   var lastMail = { href: '', t: 0 };
+  // The click currently being dispatched (set in the capture listener below,
+  // cleared once the event has finished). A handler on a bare "#" link that
+  // builds a mailto: used to have that navigation replaced by the mail launch;
+  // now that the launch is a dispatch, the "#" default would load the share
+  // page inside its own frame, so the dispatch cancels the click instead.
+  var activeClick = null;
   function parseMailto(href) {
     var out = { subject: '', body: '' };
     try {
@@ -138,6 +144,7 @@
     var now = Date.now();
     if (href === lastMail.href && now - lastMail.t < 2000) return true; // one click reaching us twice
     lastMail = { href: href, t: now };
+    if (activeClick) { try { activeClick.preventDefault(); } catch (e) {} }
     var m = parseMailto(href);
     if (pending) {
       // Same submission as the form the auto-wire is holding: enrich it, send once.
@@ -172,15 +179,41 @@
   window.__aiLoc = loc;
   // Anything assigned before this script loaded was parked by the head stub.
   try { (window.__aiMailQueue || []).forEach(function (h) { window.__aiMailto(h); }); window.__aiMailQueue = []; } catch (e) {}
-  // mailto: links: dispatch instead of navigating the frame. Capture phase, but the
-  // page's own click handlers still run (they usually print the confirmation).
+  // Link handling for the sandboxed srcdoc frame the page runs in. Capture phase,
+  // and the page's own click handlers still run (they usually print the
+  // confirmation or smooth-scroll).
+  //  - mailto:            dispatch instead of navigating the frame
+  //  - "#", "#id", "", "?": inside a srcdoc frame these resolve to the share
+  //                       page's own URL and would load the whole chrome inside
+  //                       the frame, so they are handled here: scroll to the
+  //                       target if there is one, otherwise do nothing
+  //  - links to ainetscape.com open in the top window; other sites in a new tab
+  var HOST = /^(www\.)?ainetscape\.com$/i;
   document.addEventListener('click', function (e) {
+    activeClick = e;
+    setTimeout(function () { if (activeClick === e) activeClick = null; }, 0);
     var t = e.target; while (t && t.nodeType === 1 && t.tagName !== 'A') t = t.parentNode;
-    if (!t || t.tagName !== 'A') return;
+    if (!t || t.tagName !== 'A' || !t.hasAttribute('href')) return;
     var h = (t.getAttribute('href') || '').trim();
-    if (!/^mailto:/i.test(h)) return;
-    e.preventDefault();
-    window.__aiMailto(h);
+    if (/^mailto:/i.test(h)) { e.preventDefault(); window.__aiMailto(h); return; }
+    if (/^(javascript|tel|sms|data|blob):/i.test(h)) return;
+    if (h === '' || h.charAt(0) === '#' || h.charAt(0) === '?') {
+      e.preventDefault();
+      var id = h.charAt(0) === '#' ? h.slice(1) : '';
+      if (id) {
+        var el = null;
+        try { id = decodeURIComponent(id); } catch (x) {}
+        try { el = document.getElementById(id) || document.querySelector('a[name="' + id.replace(/["\\]/g, '') + '"]'); } catch (x) {}
+        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      return;
+    }
+    if (t.hasAttribute('download') || t.getAttribute('target')) return;
+    var abs = null;
+    try { abs = new URL(t.href, 'https://ainetscape.com/'); } catch (x) { return; }
+    if (abs.protocol !== 'https:' && abs.protocol !== 'http:') return;
+    if (HOST.test(abs.host)) { t.setAttribute('target', '_top'); }
+    else { t.setAttribute('target', '_blank'); t.setAttribute('rel', 'noopener'); }
   }, true);
 
   // Auto-wire EVERY form: any contact/order/signup form is delivered to the
