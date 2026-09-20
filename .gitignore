@@ -9,13 +9,8 @@ node_modules/
 .claude/
 
 # Generated at build time by scripts/build_ga.mjs
-public/ga.js
 
 # Generated at build time by scripts/build_pages.mjs
-public/terms.html
-public/privacy.html
-public/copyright.html
-public/faq.html
 
 # Local exploratory / review scratch — generated test pages + screenshots,
 # never part of the product. Kept on disk, excluded from the repo.
