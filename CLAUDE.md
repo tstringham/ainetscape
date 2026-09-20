@@ -17,8 +17,27 @@ Static homepage (`public/index.html`) ships the whole 1997 chrome + WYSIWYG edit
 - **KV / rate-limit**: Upstash Redis (in-memory fallback for dev). All rate-limiters + the vote-dedup + the per-IP/day visit-counter dedup go through it.
 - **AI providers** (multi-provider waterfall): **xAI Grok 4** primary (`api.x.ai/v1`, OpenAI-compatible), **Anthropic Claude Sonnet** as fallback. Gemini + OpenAI under evaluation. Free-token arbitrage is part of the rationale — never expose provider names in chrome.
 - **Images**: Unsplash via `api/_unsplash.js` is the current shipping pipeline. The brief is moving to **Pexels primary / Unsplash failover** (see `feedback_*.md` / project memory) — neither cut over yet.
+- **Thumbnails**: rendered by us, never a third party. `scripts/build_thumbs.mjs` uses
+  Playwright, stores PNGs in the `thumbnails` collection, and `/api/thumb/<slug>` serves
+  them. `api/generate.js` dispatches `.github/workflows/thumbnails.yml` the moment a page
+  publishes, so a thumbnail lands in ~2 minutes; the 3-hourly schedule is the backstop.
+  Needs `GITHUB_DISPATCH_TOKEN` in Vercel (classic, `public_repo` — **verified sufficient
+  20 September**, despite GitHub's docs naming `repo`) and `MONGODB_URI` as a GitHub
+  Actions secret. This replaced api.microlink.io, a metered screenshot proxy whose free
+  quota took out every gallery card AND every shared link's og:image at once.
 - **Cron**: weekly Site-of-the-Week picker (`api/cron/site-of-the-week.js`, schedule `0 0 * * 1` in `vercel.json`).
-- **Email**: Resend (key in hand, DNS auth pending). `webmaster@ainetscape.com` is the only address ever exposed to users — never the real inbox.
+- **Email**: Resend, **live and verified 20 September 1997**. `RESEND_API_KEY` is set in
+  Vercel Production and domain authentication is published in public DNS — SPF on the
+  apex, DKIM at `resend._domainkey.ainetscape.com`, `send.ainetscape.com` with an
+  Amazon SES MX for bounces, DMARC at `p=quarantine`. This line previously read "key in
+  hand, DNS auth pending", which was wrong in both halves and cost a session an hour
+  hunting a delivery fault that did not exist. `webmaster@ainetscape.com` is the only
+  address ever exposed to users — never the real inbox.
+- **Contact forms**: `/api/cta` returns HTTP 200 whether or not the mail sends, so the
+  page can always show its confirmation. **A working form and a broken one look
+  identical from the outside** — the Vercel function log is the only place that says
+  which, and it prints one of `RESEND_API_KEY not set`, `Resend rejected: <status>` or
+  `Resend network failure`. Check there before assuming anything about delivery.
 
 ## Repo map
 
@@ -89,7 +108,7 @@ These pieces are merged on the WIP branch but await their counterpart UX/system-
 - **B5 contact-form backend** (`api/contact-form.js`, `api/page/[slug]/set-contact-email.js`, `getContactRecipient`/`setContactRecipient` in `api/_db.js`) — ENDPOINTS ARE LIVE but currently unreachable from the flow because:
   1. SYSTEM_PROMPT still tells the model "use `mailto:` only — NOT a backend form." Flipping this to allow `<form action="/api/contact-form">` is the trigger.
   2. No client-side "Where should contact form submissions go?" dialog yet. Without it, `recipient_email` is never set and submissions return 409 ("not configured").
-  3. Requires `RESEND_API_KEY` env var + completed DNS auth (SPF/DKIM for `webmaster@ainetscape.com` via Resend dashboard).
+  3. Requires `RESEND_API_KEY` env var + completed DNS auth (SPF/DKIM for `webmaster@ainetscape.com` via Resend dashboard). **Both are done as of 20 September** — see the Email note above.
   Ship plan: build the recipient-email dialog → flip the SYSTEM_PROMPT → confirm DNS → deploy. All four steps need to land in the same release or the model will emit forms that 409 every submission.
 
 - **A10 Spelling modal** — shipped. Typo.js + Hunspell en_US vendored to `public/spell/` (~600KB, served with 30-day immutable Cache-Control). Lazy-loaded on first Spelling open; subsequent opens hit the HTTP cache. `public/spell/spell-check.js` carries the modal logic; the modal HTML is `#dlg-spell` in `public/index.html`. Ignored words persist in `sessionStorage` ("Ignore All"); custom additions persist in `localStorage` ("Add to Dictionary"). Toolbar `case 'spell'` + Tools > Check Spelling… both route to `openSpellingDialog()`.
