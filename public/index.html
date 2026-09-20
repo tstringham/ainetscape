@@ -2571,10 +2571,52 @@ function pickWeightedPillar() {
   return Object.keys(w)[0];
 }
 
+// Premises this visitor has already sent to the generator.
+//
+// Without this the same four chips kept reappearing and the gallery filled with
+// near-duplicates of the same handful of briefs: a chip dispatches straight to
+// the generator, so a premise that looks appealing gets published again and
+// again by the same person across sessions.
+//
+// Per-visitor, in localStorage. It cannot stop two DIFFERENT people picking the
+// same chip -- that would need a server-side signal and a rethink of what
+// "used" means -- but it does stop one person publishing the driver's manual
+// four times.
+const USED_PREMISES_KEY = 'ai.usedPremises.v1';
+
+function loadUsedPremises() {
+  try {
+    const raw = localStorage.getItem(USED_PREMISES_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch (e) { return new Set(); }
+}
+
+function markPremiseUsed(label) {
+  try {
+    const used = loadUsedPremises();
+    used.add(label);
+    /*
+     * Reset when the pool can no longer fill the dialog.
+     *
+     * Four chips is what the dialog shows, so once fewer than four are unused
+     * the choice is between repeating anyway and showing a short row. Clearing
+     * is the better failure: the visitor has been through the whole catalogue
+     * and the ones at the start are old news to them again.
+     */
+    const remaining = COMPOSER_CONFIG.premises.filter(p => !used.has(p.label)).length;
+    if (remaining < 4) { localStorage.removeItem(USED_PREMISES_KEY); return; }
+    localStorage.setItem(USED_PREMISES_KEY, JSON.stringify([...used]));
+  } catch (e) { /* private mode, quota, disabled -- chips just repeat */ }
+}
+
 // Sample n distinct premises; each slot's pillar drawn by weight, premise
 // random within that pillar. Falls back to fill if a pillar runs dry.
+//
+// Seeded with what this visitor has already used, so a premise leaves the
+// rotation the moment it is dispatched rather than on some later reshuffle.
 function sampleHelperChips(n) {
-  const used = new Set(), out = [];
+  const used = loadUsedPremises(), out = [];
   let guard = 0;
   while (out.length < n && guard++ < 200) {
     const pillar = pickWeightedPillar();
@@ -2616,6 +2658,9 @@ function populateExampleChips() {
     el.textContent = item.label;          // short, on-strategy label
     el.dataset.pillar = item.pillar;
     el.addEventListener('click', () => {
+      // Retire it BEFORE dispatching. The generator navigates away from this
+      // dialog, so anything recorded afterwards races the page it is leaving.
+      markPremiseUsed(item.label);
       // Tap → dispatch premise × random register × random aesthetic straight to
       // the generator. Register/aesthetic stay hidden; the output surprises.
       generateWithAI({ brief: dispatchBriefFor(item.premise), fromChip: true });
