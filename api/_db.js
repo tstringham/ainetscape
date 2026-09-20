@@ -737,3 +737,52 @@ export async function listSlugsMissingThumbnails(limit = 500) {
     .limit(limit)
     .toArray();
 }
+
+// ─── Composer premises ──────────────────────────────────────────────────────
+//
+// The chip catalogue, moved out of public/index.html so it can be edited
+// without a deploy.
+//
+// index.html still ships the full list as a baked-in fallback and that is
+// deliberate: the homepage is a static file on a CDN, the chips must render the
+// instant the dialog opens, and a composer that shows nothing because a
+// database was slow is worse than one showing a slightly stale catalogue. The
+// fetch upgrades the list; it is never on the critical path.
+//
+// One row per premise, `_id` = the label, so re-seeding is idempotent and a
+// duplicate label is impossible by construction rather than by a check.
+
+export async function listComposerPremises() {
+  const d = await getDb();
+  return d.collection('premises')
+    .find({ retired: { $ne: true } }, { projection: { _id: 0, pillar: 1, label: 1, premise: 1 } })
+    .toArray();
+}
+
+/**
+ * Upsert a batch. Returns counts rather than writing to stdout, so the caller
+ * decides what an operator sees.
+ *
+ * Never deletes. A premise removed from the seed file stays in the database
+ * until somebody sets `retired: true` on it -- dropping a row because it fell
+ * out of a source file is how a catalogue quietly loses entries nobody meant to
+ * lose.
+ */
+export async function upsertComposerPremises(rows) {
+  if (!Array.isArray(rows) || !rows.length) return { added: 0, updated: 0 };
+  const d = await getDb();
+  const col = d.collection('premises');
+  let added = 0, updated = 0;
+  for (const r of rows) {
+    if (!r || !r.label || !r.premise || !r.pillar) continue;
+    const res = await col.updateOne(
+      { _id: String(r.label) },
+      { $set: { pillar: String(r.pillar), label: String(r.label), premise: String(r.premise) },
+        $setOnInsert: { added_at: new Date() } },
+      { upsert: true }
+    );
+    if (res.upsertedCount) added += 1;
+    else if (res.modifiedCount) updated += 1;
+  }
+  return { added, updated };
+}

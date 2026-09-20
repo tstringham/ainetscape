@@ -2758,9 +2758,46 @@ function dispatchBriefFor(premise) {
   return `${premise}, rendered as ${art(reg)} ${reg}, in ${art(aes)} ${aes} style.`;
 }
 
+/*
+ * Upgrade the catalogue from the database, once per page.
+ *
+ * The array above is the fallback and it ships with the page, because this is a
+ * static file on a CDN and the chips must be there the instant the dialog
+ * opens. A composer showing nothing because a database was slow is worse than
+ * one showing a slightly stale list -- so nothing here is awaited before chips
+ * render, and every failure path simply leaves the baked-in list in place.
+ *
+ * Consequence worth knowing: a premise deleted from the database keeps
+ * appearing until a deploy rebuilds this file. Retiring one for real means
+ * setting `retired: true` AND removing it here. Two places, which is the price
+ * of the list being available before the network is.
+ */
+let _premisesFetched = false;
+function refreshPremisesFromServer() {
+  if (_premisesFetched) return;
+  _premisesFetched = true;
+  try {
+    fetch('/api/premises', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        const rows = data && Array.isArray(data.premises) ? data.premises : null;
+        if (!rows || !rows.length) return;
+        // Only take rows that are complete and in a pillar the weights know
+        // about. A premise in an unknown pillar can never be drawn, so it would
+        // silently shrink the effective catalogue.
+        const clean = rows.filter(r =>
+          r && r.label && r.premise && r.pillar && (r.pillar in COMPOSER_CONFIG.pillarWeights));
+        if (clean.length) COMPOSER_CONFIG.premises = clean;
+      })
+      .catch(() => { /* keep the baked-in list */ });
+  } catch (e) { /* keep the baked-in list */ }
+}
+
 function populateExampleChips() {
   const host = document.getElementById('ai-examples');
   if (!host) return;
+  // Fire-and-forget: this open uses whatever we have, the next one benefits.
+  refreshPremisesFromServer();
   host.innerHTML = '';
   sampleHelperChips(4).forEach(item => {
     const el = document.createElement('div');

@@ -82,6 +82,9 @@
     },
     "api/page/[slug]/raw.js": {
       "maxDuration": 10
+    },
+    "api/premises.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [
