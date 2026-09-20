@@ -85,12 +85,22 @@ export function decorate(html, slug, doc) {
   const pageTitle = (doc && doc.page_title) || (titleMatch && titleMatch[1].trim()) || 'A page made on AI Netscape';
   const safeTitle = escapeAttr(pageTitle.slice(0, 120));
 
-  // OG image = a live Microlink screenshot of THIS share URL (now the framed
-  // page). Social crawlers read these outer-document tags for the card.
-  const ogImageUrl = 'https://api.microlink.io/'
-    + '?url=' + encodeURIComponent(shareUrl)
-    + '&screenshot=true&meta=false&embed=screenshot.url'
-    + '&viewport.width=1200&viewport.height=630';
+  // OG image = this page's own stored thumbnail, served from /api/thumb.
+  //
+  // This was a live api.microlink.io screenshot of the share URL. That is a
+  // third-party proxy on a free daily quota, and when the quota ran out on
+  // 20 September every shared link on the site lost its social card at the
+  // same moment the gallery lost its thumbnails -- one dependency, two
+  // failures, neither visible from inside the site.
+  //
+  // Absolute, because a crawler has no base to resolve against. And when the
+  // page has no render yet, this falls back to the site's static social card
+  // rather than to /api/thumb's placeholder: that placeholder is an SVG, and
+  // Facebook, Twitter and iMessage all reject SVG for og:image. A generic but
+  // valid card beats a specific but rejected one.
+  const ogImageUrl = (doc && doc.thumbnail_at)
+    ? 'https://ainetscape.com/api/thumb/' + encodeURIComponent(slug)
+    : 'https://ainetscape.com/og-image.png';
   const safeImg = escapeAttr(ogImageUrl);
   const ogTags =
     '<meta property="og:type" content="website">' +

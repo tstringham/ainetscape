@@ -73,6 +73,9 @@
     },
     "api/cta.js": {
       "maxDuration": 10
+    },
+    "api/thumb/[slug].js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [

@@ -645,3 +645,95 @@ export async function logEvent({
 
   await d.collection('generations').insertOne(doc);
 }
+
+// ─── Thumbnails ─────────────────────────────────────────────────────────────
+//
+// Page previews, rendered by us and stored by us.
+//
+// These used to come from api.microlink.io — a third-party screenshot proxy on
+// a free tier, called fresh by the gallery AND by every page's og:image and
+// twitter:image. On 20 September 1997 its daily quota ran out and every card in
+// the gallery read "Preview unavailable" while every shared link lost its
+// social preview at the same time. A rate limit on somebody else's account is
+// not an acceptable dependency for the one image every card needs.
+//
+// Bytes live in their own collection rather than on the generations row.
+// `findGalleryPages` pulls two dozen rows at a time and a 16 MB document cap
+// is not the constraint that matters -- the constraint is that a list query
+// should never drag a megabyte of PNG per row across the wire.
+//
+// `_id` IS the slug. One thumbnail per page, and the uniqueness is structural
+// rather than enforced by an index nobody would notice was missing.
+
+const THUMB_MAX_BYTES = 2 * 1024 * 1024;
+
+export async function getThumbnail(slug) {
+  if (!slug) return null;
+  const d = await getDb();
+  return d.collection('thumbnails').findOne({ _id: String(slug) });
+}
+
+/**
+ * Store (or replace) a page's thumbnail.
+ *
+ * `png` is a Buffer. `source` records what produced it -- 'playwright' for the
+ * backfill script, and whatever a future automatic path calls itself -- so a
+ * bad batch can be found and re-rendered without guessing.
+ */
+export async function putThumbnail({ slug, png, width, height, source }) {
+  if (!slug) throw new Error('putThumbnail requires slug');
+  if (!png || !png.length) throw new Error('putThumbnail requires png bytes');
+  if (png.length > THUMB_MAX_BYTES) {
+    throw new Error(`thumbnail for ${slug} is ${png.length} bytes, over the ${THUMB_MAX_BYTES} cap`);
+  }
+  const d = await getDb();
+  await d.collection('thumbnails').updateOne(
+    { _id: String(slug) },
+    {
+      $set: {
+        png,
+        width: width || null,
+        height: height || null,
+        bytes: png.length,
+        source: String(source || 'unknown'),
+        rendered_at: new Date()
+      }
+    },
+    { upsert: true }
+  );
+
+  // Mirror a flag onto the generations row.
+  //
+  // `decorate()` in api/page/[slug]/index.js is synchronous and already holds
+  // this document, so a flag here lets it choose between the page's own
+  // thumbnail and the site's static social card for og:image without a second
+  // query per page render. The bytes stay in their own collection; only the
+  // fact travels.
+  await d.collection('generations').updateOne(
+    { share_slug: String(slug) },
+    { $set: { thumbnail_at: new Date() } }
+  );
+}
+
+/**
+ * Public gallery slugs with no thumbnail yet, oldest first.
+ *
+ * Drives the backfill script. Deliberately returns slugs and titles only --
+ * the caller renders from the live URL, so it never needs the body.
+ */
+export async function listSlugsMissingThumbnails(limit = 500) {
+  const d = await getDb();
+  const have = await d.collection('thumbnails').distinct('_id');
+  return d.collection('generations')
+    .find(
+      {
+        source: 'ai',
+        is_public: { $ne: false },
+        share_slug: { $exists: true, $nin: have }
+      },
+      { projection: { _id: 0, share_slug: 1, page_title: 1, completed_at: 1 } }
+    )
+    .sort({ completed_at: 1 })
+    .limit(limit)
+    .toArray();
+}
