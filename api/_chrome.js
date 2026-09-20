@@ -67,7 +67,7 @@ const GALLERY_BODY_SCRIPT = `<script>
   }
 </script>`;
 
-export function renderChrome({ title, content, statusText = 'Document: Done', headExtra = '', styleExtra = '', editFrameInner, statusExtra, bodyScript }) {
+export function renderChrome({ title, content, statusText = 'Document: Done', headExtra = '', styleExtra = '', editFrameInner, statusExtra, bodyScript, afterWindow = '' }) {
   const _editInner = (editFrameInner !== undefined) ? editFrameInner : '<div class="doc-content">' + (content || '') + '</div>';
   const _statusRight = (statusExtra !== undefined) ? statusExtra : DEFAULT_STATUS_RIGHT;
   const _bodyScript = (bodyScript !== undefined) ? bodyScript : GALLERY_BODY_SCRIPT;
@@ -718,6 +718,7 @@ ${headExtra}
     <div class="status-pane" id="status-clock">--:--</div>
   </div>
 </div>
+${afterWindow}
 <script>
   // Status clock — IIFE so a missing element can't take down the rest
   // of the inline script (e.g. the upvote handler). Cached element ref
