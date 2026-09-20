@@ -31,6 +31,7 @@ import {
   getAiWaterfall, findByContentHash
 } from './_shared.js';
 import { postProcessPexels } from './_pexels.js';
+import { requestThumbnail } from './_thumbjob.js';
 // Unsplash post-processor is retained as the standby failover. The
 // system prompt no longer teaches [UNSPLASH:...] so it usually does
 // nothing — but pages built before the Pexels cutover may still ship
@@ -482,6 +483,17 @@ export default async function handler(req, res) {
           verdict: wasRefusal ? accumulated.slice('REFUSED::'.length).trim().slice(0, 200) : null
         });
         completionOk = true;
+
+        /*
+         * The page exists now, so ask for its thumbnail now.
+         *
+         * `void`, never awaited: the body has already streamed to the user and
+         * a generation must not wait on, or fail because of, a cosmetic job.
+         * `requestThumbnail` swallows everything and the three-hourly schedule
+         * is the backstop, so the worst case here is the behaviour we had
+         * before -- a placeholder for a few hours.
+         */
+        void requestThumbnail(shareSlug);
       } catch (err) {
         // Duplicate-key error = a concurrent publish claimed this exact
         // contentHash between our pre-write check and this write (the partial
