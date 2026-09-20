@@ -192,6 +192,38 @@ const LOC_STUB = '<script>window.__aiLoc={set href(v){if(/^\\s*mailto:/i.test(St
 export function prepareDocument(html, slug) {
   let out = String(html == null ? '' : html);
   out = out.replace(/window\.location\.href(\s*)=(?!=)/g, '__aiLoc.href$1=');
+
+  /*
+   * Strip the model's own form handlers.
+   *
+   * The system prompt is explicit that a form gets named fields and a submit
+   * button and NOTHING else -- no action, no method, no handler -- because the
+   * host intercepts every submit, delivers the fields to the webmaster and
+   * shows the in-page confirmation. The model ignores this on nearly every
+   * page, writing things like:
+   *
+   *   onsubmit="event.preventDefault(); alert('Your reflection has been noted.
+   *             The page will remember this privately.');"
+   *
+   * Two problems, and the second is the serious one. It throws a native browser
+   * alert, which looks nothing like a 1997 page and breaks the illusion the
+   * whole site is built on. And it asserts something FALSE: nothing remembers
+   * anything privately. A visitor is told their message was kept when the only
+   * thing that happened was whatever `cta-dispatch.js` managed on its own.
+   *
+   * cta-dispatch binds on the CAPTURE phase so it always runs first and the
+   * delivery does happen -- but `preventDefault` does not stop the inline
+   * handler, so the model's lie fires immediately afterwards and is what the
+   * visitor actually sees.
+   *
+   * So the attribute goes. Removing it leaves the host's own confirmation as
+   * the only thing that speaks, which is what the prompt asked for. Applied at
+   * render, so it fixes every page already published as well as the next one.
+   *
+   * Deliberately narrow: `onsubmit` on `<form>` only. Generated pages use
+   * onclick for calculators and toggles that are real content -- those stay.
+   */
+  out = out.replace(/(<form\b[^>]*?)\son(?:submit|reset)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
   const head = '<style>img,svg,video,canvas{max-width:100%!important;height:auto;}</style>' + LOC_STUB;
   if (/<head[^>]*>/i.test(out)) out = out.replace(/<head[^>]*>/i, (m) => m + head);
   else if (/<html[^>]*>/i.test(out)) out = out.replace(/<html[^>]*>/i, (m) => m + head);
