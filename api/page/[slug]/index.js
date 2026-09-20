@@ -12,7 +12,7 @@
 
 import { getCallerIp, rateLimit } from '../../_shared.js';
 import { renderChrome, escapeAttr } from '../../_chrome.js';
-import { buildDescription, renderTextVersion } from '../../_indexable.js';
+import { buildDescription } from '../../_indexable.js';
 
 const VALID_SLUG = /^[A-Za-z0-9]{6,20}$/;
 
@@ -139,40 +139,21 @@ export function decorate(html, slug, doc) {
   const iframe =
     '<iframe class="page-frame" title="' + safeTitle + '" ' +
     'sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-forms allow-modals" ' +
-    'srcdoc="' + srcdocEscape(prepareDocument(html, slug)) + '"></iframe>';
+    /*
+     * A real URL, not srcdoc.
+     *
+     * srcdoc has no address, so the document inside it could not be crawled --
+     * that is the whole reason /p/<slug>/raw exists. The sandbox is unchanged
+     * and still omits allow-same-origin, and `raw` sends a CSP sandbox header
+     * so the isolation holds even if someone opens the URL directly.
+     */
+    'src="/p/' + encodeURIComponent(slug) + '/raw"></iframe>';
 
   const statusExtra = isArtifact ? artifactStatus(slug) : platformStatus();
   const scripts = isArtifact
     ? '<script src="https://ainetscape.com/share-dialog.js" defer></script>' +
       '<script src="https://ainetscape.com/artifact-cluster.js" defer></script>' + MUTE_SCRIPT
     : MUTE_SCRIPT;
-
-  /*
-   * The text rendering, below the window.
-   *
-   * The framed page above is the product; this is the same words in a form a
-   * crawler -- or Lynx, or anyone on a slow line -- can actually read. It goes
-   * AFTER the window rather than inside .edit-frame so it cannot disturb the
-   * frame's layout, and it is plainly visible rather than hidden: identical
-   * content shown to everyone is the difference between a text-only version
-   * and cloaking.
-   *
-   * Escaped through `escapeAttr`, which escapes the same five characters a
-   * text node needs. Nothing from the model's document becomes live markup out
-   * here -- that isolation is what the sandboxed iframe exists for and this
-   * must not quietly undo it.
-   */
-  const textBody = renderTextVersion(html, escapeAttr);
-  const textVersion = textBody
-    ? '<section class="text-version">' +
-        // The page's own title as the document's only h1. The outer document
-        // had none at all -- the chrome carries the title in a titlebar link
-        // and a status pane, neither of which is a heading.
-        '<h1>' + escapeAttr(pageTitle) + '</h1>' +
-        '<p class="text-version-note">Text-only version, for Lynx, slow connections, and indexing robots.</p>' +
-        textBody +
-      '</section>'
-    : '';
 
   return renderChrome({
     title: pageTitle,
@@ -181,8 +162,7 @@ export function decorate(html, slug, doc) {
     styleExtra: PAGE_STYLE,
     editFrameInner: iframe,
     statusExtra: statusExtra,
-    bodyScript: scripts,
-    afterWindow: textVersion
+    bodyScript: scripts
   });
 }
 
@@ -209,7 +189,7 @@ const CTA_DISPATCH_SRC = 'https://ainetscape.com/cta-dispatch.js';
 const LOC_STUB = '<script>window.__aiLoc={set href(v){if(/^\\s*mailto:/i.test(String(v))){'
   + '(window.__aiMailQueue=window.__aiMailQueue||[]).push(String(v));}else{window.location.href=v;}},'
   + 'get href(){return window.location.href;}};</script>';
-function prepareDocument(html, slug) {
+export function prepareDocument(html, slug) {
   let out = String(html == null ? '' : html);
   out = out.replace(/window\.location\.href(\s*)=(?!=)/g, '__aiLoc.href$1=');
   const head = '<style>img,svg,video,canvas{max-width:100%!important;height:auto;}</style>' + LOC_STUB;
@@ -273,21 +253,7 @@ const NAV_LINKS =
 // grows/wraps to hold the cluster, and the mute speaker matches the homepage.
 const PAGE_STYLE = `
   .page-frame { width:100%; height:100%; border:0; display:block; background:#fff; }
-  /* The text-only rendering below the window. Deliberately plain: it is the
-     document without the design, which is the point of offering it. */
-  .text-version { max-width: 46em; margin: 24px auto 40px; padding: 20px 24px;
-    background: #fff; border: 2px solid #808080; font-family: Georgia, 'Times New Roman', serif;
-    color: #000; line-height: 1.5; }
-  .text-version h1 { font-size: 1.3em; margin: 0 0 2px; text-transform: uppercase;
-    letter-spacing: .06em; }
-  .text-version h2 { font-size: 1.1em; margin: 1.4em 0 .3em; }
-  .text-version h3 { font-size: 1em; margin: 1.2em 0 .3em; }
-  .text-version .text-version-note { margin: 0 0 16px; padding-bottom: 12px;
-    border-bottom: 1px solid #c0c0c0; font-size: .82em; color: #505050; font-style: italic; }
-  .text-version p { margin: 0 0 .8em; }
-  .text-version ul { margin: 0 0 .8em 1.2em; padding: 0; }
-  .text-version blockquote { margin: 0 0 .8em; padding-left: .9em;
-    border-left: 3px solid #c0c0c0; color: #303030; }
+
   .statusbar { height:auto; min-height:20px; flex-wrap:wrap; row-gap:2px; }
   .status-sound { background:var(--face); border:1px solid; border-color:var(--sh) var(--hi) var(--hi) var(--sh); cursor:pointer; user-select:none; padding:0 5px; height:16px; display:flex; align-items:center; }
   .status-sound:hover { background:var(--face-lt); }
