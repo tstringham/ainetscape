@@ -1,0 +1,70 @@
+# Render thumbnails for newly generated pages.
+#
+# A page's SEO is automatic -- description, canonical, h1 and the text-only
+# version are all computed per request from the stored HTML. Its THUMBNAIL is
+# not: that needs a browser, and a browser does not belong in a Vercel function
+# where twelve gallery cards could each trigger a cold Chromium launch.
+#
+# So it runs here instead, on the same Playwright the repo already uses for the
+# static social card. Free for the minutes it takes, no weight added to the
+# serverless bundle, and it writes straight to Mongo like the manual run does.
+#
+# Until this lands a new page shows the placeholder in the gallery AND falls
+# back to the generic site card for og:image -- so a page shared to Twitter in
+# its first hours shows the AI Netscape logo rather than itself. That is the gap
+# this closes.
+
+name: thumbnails
+
+on:
+  schedule:
+    # Every three hours. Hourly would cost ~1,440 minutes a month against a
+    # private repo's 2,000-minute allowance, which is too close to the edge for
+    # a cosmetic job; three-hourly is ~480 and leaves room for everything else.
+    - cron: '17 */3 * * *'
+  # So a new page can be given its thumbnail immediately rather than waiting for
+  # the next slot.
+  workflow_dispatch:
+
+# One at a time. Two overlapping runs would render the same pending slugs twice
+# and race each other's writes for no benefit.
+concurrency:
+  group: thumbnails
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Ask before paying. A single indexed query, no browser, so an idle run
+      # is seconds rather than the minute Chromium costs to install.
+      - name: Count pending
+        id: pending
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: echo "count=$(node scripts/build_thumbs.mjs --count)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Chromium
+        if: steps.pending.outputs.count != '0'
+        run: npx playwright install --with-deps chromium
+
+      - name: Render
+        if: steps.pending.outputs.count != '0'
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          SITE_ORIGIN: https://ainetscape.com
+        run: node scripts/build_thumbs.mjs
+
+      - name: Nothing to do
+        if: steps.pending.outputs.count == '0'
+        run: echo "Every public page already has a thumbnail."

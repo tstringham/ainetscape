@@ -131,7 +131,10 @@ function loadEnvFile() {
     try {
       process.loadEnvFile(p);
       if (process.env.MONGODB_URI) {
-        console.log('Loaded ' + name);
+        // stderr, not stdout. `--count` writes a bare number that the CI job
+        // captures into $GITHUB_OUTPUT, and a chatty stdout would turn
+        // `count=0` into `count=Loaded .env.production.local\n0`.
+        console.error('Loaded ' + name);
         return;
       }
     } catch (_) { /* older node, or unreadable -- fall through to the error */ }
@@ -161,6 +164,20 @@ async function main() {
   if (hasFlag('--import-static')) {
     await importStatic(force);
     if (!hasFlag('--and-render')) { process.exit(0); }
+  }
+
+  /*
+   * `--count` answers "is there work?" without launching anything.
+   *
+   * The scheduled job runs on a timer whether or not anybody generated a page,
+   * and installing Chromium costs about a minute every time. This is a single
+   * indexed query, so an idle run finishes in seconds and the browser is only
+   * fetched when there is actually something to render.
+   */
+  if (hasFlag('--count')) {
+    const pending = await listSlugsMissingThumbnails(limit);
+    console.log(String(pending.length));
+    process.exit(0);
   }
 
   let targets;
