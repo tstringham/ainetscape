@@ -24,7 +24,7 @@
 // ============================================================
 
 import {
-  getCallerIp, parseBody, rateLimit, rateLimitMessage,
+  getCallerIp, parseBody, rateLimit, rateLimitMessage, adminTokenValid,
   makeCache, logEvent, makeShareSlug,
   makeAuthorToken, hashAuthorToken,
   insertPagePlaceholder, completePageRow,
@@ -115,23 +115,19 @@ INTERACTIVE ELEMENTS (non-negotiable):
   (b) external links to genuine, well-known URLs (e.g. https://example.com).
 - NEVER emit a <button> with no behavior, NEVER use href="#" or href="javascript:void(0)" stubs, NEVER write "Get Started" or "Sign Up" buttons that go nowhere.
 - For navigation menus, use anchor links to sections you actually build on the page. If you write a "Pricing" link in the nav, you MUST include a <section id="pricing"> further down.
-- For CTAs in pitch/SaaS/portfolio pages: prefer an anchor to an on-page contact section (with form OR a mailto: link OR a phone number) over a dead "Start Free Trial" button.
+- For CTAs in pitch/SaaS/portfolio pages: prefer an anchor to an on-page contact section (with a form OR a phone number) over a dead "Start Free Trial" button.
 
 CONTACT (when the brief implies one):
-- Contact affordances must be a working mailto: link, and the address MUST be EXACTLY webmaster@ainetscape.com — e.g. <a href="mailto:webmaster@ainetscape.com?subject=Reservation">Reserve</a>. NEVER invent or use any other email address (no chef@gmail.com, no studio@<brand>.com, no hello@<brand>.com). webmaster@ainetscape.com is the ONLY email permitted anywhere on the page, even when it doesn't match the fictional brand. You MAY customize ?subject= and ?body=. Do NOT build a contact form that submits to a backend.
-- If the brief explicitly asks for a "contact form", build the form's UI but point the submit at webmaster@ainetscape.com — an <a href="mailto:webmaster@ainetscape.com?..."> button OR window.location.href = 'mailto:webmaster@ainetscape.com?...' with the form fields encoded into the body. The address is always webmaster@ainetscape.com — never a brand-specific one.
-- If the brief does NOT imply a contact need, do NOT add a contact affordance just to fill space.
+- Contact/order/signup submissions are delivered to the site's webmaster automatically by the page host. You do NOT wire up delivery and you do NOT write any email address anywhere on the page: NEVER emit a mailto: link, NEVER invent an address (no chef@gmail.com, no hello@<brand>.com), and do NOT print webmaster@ainetscape.com in the visible copy.
+- To collect a message, build a real <form> with named fields (e.g. name, email, message) and a submit button, styled to the page. Give it NO action, NO method, NO mailto, and NO fetch/backend call of your own — on submit the host delivers the fields to the webmaster and shows the confirmation automatically.
+- A phone number or physical address in the copy is fine as extra contact detail. If the brief does NOT imply a contact need, do NOT add a contact affordance just to fill space.
 
 INTERACTIVITY (non-negotiable) — every page ships FULLY WIRED. No dead controls, anywhere.
 - Never emit href="#", href="javascript:void(0)", or any button/link with no action — this INCLUDES logos and "back to top" controls. A logo or back-to-top must smooth-scroll to the top of the page via a click handler; NEVER href="#".
 - On-page nav/anchors stay WITHIN this single generated page (these are single-file 1997-style pages): link to real section IDs you actually build, with smooth scroll.
-- Single-CTA actions (Order, Buy, Subscribe, Contact, Register, Book, Donate, Apply): wire an inline click handler that (1) fires a PRE-FILLED mailto to webmaster@ainetscape.com, then (2) ALWAYS shows the in-page confirmation "Your message has been dispatched to the webmaster." without navigating away. The confirmation is MANDATORY here, identical to the form path — not optional, not forms-only.
-- Contact/order FORMS: real named fields + a submit button; on submit, an inline handler composes the mailto from the field values (fields → body), fires it, and shows the same in-page confirmation. No external backend, ever.
-- SUBJECT — for EVERY mailto, single-CTA actions AND forms alike: exactly \${pageTitle} · via AI Netscape (encoded; fallback "A web page" if the page has no <title>; if the title exceeds 60 characters, truncate it and append "..."). Do NOT freelance an in-voice subject — this exact form is required so the site's attribution stays consistent.
-- BODY: the user's entered fields/message FIRST, then a blank line, a separator, and this link-back (consistent with the site's own Share→Email copy):
-    Sent from "\${pageTitle}", a website built in under a minute at AI Netscape.
-    Build your own — no signup, no payment, modem sounds included: https://ainetscape.com
-- Build the mailto by encoding subject and body with encodeURIComponent, matching the existing share-dialog.js pattern (this correctly encodes ampersands &, em-dashes —, and emoji). Do NOT use URLSearchParams.
+- Contact/order/signup FORMS: build real named fields + a submit button and nothing more — NO action, NO method, NO mailto, NO fetch. The host intercepts every form submit, delivers the fields to the webmaster, and shows the in-page confirmation "Your message has been dispatched to the webmaster." automatically. You only build the form UI.
+- Single-CTA actions NOT inside a form (Order, Buy, Subscribe, Contact, Register, Book, Donate, Apply): add onclick="return __aiDispatch(this,'LABEL')" to the button or link, where LABEL is a short description of the action (e.g. 'Reserve a table'). This delivers the click to the webmaster and shows the same "dispatched to the webmaster" confirmation without navigating away. __aiDispatch is provided by the host — call it, never define it.
+- Do NOT build your own confirmation, subject line, mailto, or email body for any of these — the host owns all of that. Never emit an email address anywhere on the page.
 
 LAYOUT (non-negotiable) — the page must render cleanly at ANY width, from full-screen down to a bounded ~780px editor frame and mobile:
 - Hero and section images must NEVER overlap or clip the headline, nav, or body text. A hero image belongs BEHIND the text (as a background with the copy layered over it) or in its OWN column/row beside or below the heading — NEVER absolutely/fixed positioned on top of the heading so it covers the words. If in doubt, stack image and text vertically.
@@ -171,6 +167,28 @@ The page must feel like it was made by a human designer with strong opinions.`;
 
 const cache = makeCache({ ttlMs: 10 * 60 * 1000, maxEntries: 200 });
 
+// Inject the CTA/contact dispatcher into a completed page. Just a <script> tag —
+// the helper itself is the cached static file public/cta-dispatch.js — so stored
+// body_html stays lean and the helper can be updated without regenerating pages.
+// data-cta-page carries the canonical /p/<slug> URL (known here at write time;
+// unavailable at runtime inside the srcdoc iframe) so the owner's email links
+// back. Placed before </body> (fallbacks: before </html>, else appended). Never
+// throws — a failed inject just ships the page without the dispatcher.
+const CTA_DISPATCH_SRC = 'https://ainetscape.com/cta-dispatch.js';
+function injectCtaDispatch(html, slug) {
+  try {
+    const page = slug ? 'https://ainetscape.com/p/' + slug : '';
+    const tag = '<script src="' + CTA_DISPATCH_SRC + '"'
+      + (page ? ' data-cta-page="' + page + '"' : '')
+      + ' defer></script>';
+    if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, () => tag + '</body>');
+    if (/<\/html>/i.test(html)) return html.replace(/<\/html>/i, () => tag + '</html>');
+    return html + tag;
+  } catch (_) {
+    return html;
+  }
+}
+
 // ============================================================
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -195,16 +213,25 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Brief too long (maximum ${MAX_BRIEF_LENGTH} characters).` });
   }
 
+  // Owner seeding bypass: a request carrying the valid ADMIN_EDIT_TOKEN in the
+  // x-admin-token header skips the per-IP caps (5/min · 20/hr · 40/day). The
+  // GLOBAL 200/hr ceiling is STILL enforced as the hard spend cap, and a
+  // wrong/absent token is silently treated as a normal caller (no error, no
+  // bypass). This does NOT relax any content restriction — REFUSED:: still fires.
+  const isAdmin = adminTokenValid(req);
   const rl = await rateLimit(ip, 'gen', {
     perMin:    RATE_LIMIT_PER_MIN,
     perHour:   GLOBAL_RATE_LIMIT_PER_HR,
     ipPerHour: IP_LIMIT_PER_HOUR,
-    ipPerDay:  IP_LIMIT_PER_DAY
+    ipPerDay:  IP_LIMIT_PER_DAY,
+    skipPerIp: isAdmin
   });
   if (!rl.allowed) {
     res.setHeader('Retry-After', String(rl.retryAfter));
     return res.status(429).json({ error: rateLimitMessage(rl.scope) });
   }
+  // Confirm to the composer that the operator line took (no secret echoed).
+  if (isAdmin) res.setHeader('x-admin-bypass', '1');
 
   // Sharing only "lights up" when Mongo is wired — without persistent
   // storage, /p/:slug would 404. Suppress the header in that case so the
@@ -393,6 +420,13 @@ export default async function handler(req, res) {
         break;
       }
       console.log('[dedup] structural duplicate on attempt', attempt, '— re-rolling');
+    }
+
+    // Inject the CTA/contact dispatcher into successful pages — after the
+    // content-hash (so the per-page slug never perturbs dedup) and before the
+    // row write + response (so both /p/:slug and the live preview carry it).
+    if (event === 'ai_generation_completed' && finalBody) {
+      finalBody = injectCtaDispatch(finalBody, shareSlug);
     }
 
     // Headers + body written together at the end. Done now (rather than
