@@ -77,8 +77,24 @@ export default async function handler(req, res) {
     });
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    // Short edge cache — new generations appear within ~60s of write.
-    res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
+    // no-store, and it has to stay that way.
+    //
+    // This used to be `public, max-age=60, s-maxage=60` for a good-sounding
+    // reason: new generations appear within ~60s of write, and the render is
+    // three queries. But every card prints live Upvotes and Hits, and a 60s
+    // cache froze both — in browser AND at the edge. Open a page, load it
+    // three times, come back to the gallery, and the card still showed the
+    // old number. The counter was incrementing correctly the whole time; the
+    // page you checked it on was up to a minute stale, which is
+    // indistinguishable from a broken counter and was reported as one.
+    //
+    // A counter nobody can watch move is not doing its job. The three
+    // queries behind this are all indexed (gallery_recent_idx,
+    // gallery_upvotes_idx, site_of_the_week_idx) and cost far less than the
+    // bug did. The per-page stats endpoint is no-store for exactly this
+    // reason; the page that lists them should not be the one place the
+    // numbers stand still.
+    res.setHeader('Cache-Control', 'no-store');
     return res.status(200).send(html);
   } catch (err) {
     console.error('Gallery render failed:', err && (err.stack || err.message || err));
