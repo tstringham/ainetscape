@@ -34,9 +34,26 @@ export default async function handler(req, res) {
 
   // Cheap per-IP brake on the public endpoint so a single viewer can't
   // saturate Mongo reads if a page goes viral. Separate bucket from gen/tri.
+  //
+  // PER-IP ONLY, DELIBERATELY. This used to also pass perHour: 1000, which
+  // is rateLimit()'s GLOBAL ceiling across every caller, not a per-IP one —
+  // the comment above described an intent the code did not implement. Past
+  // 1000 page views in a clock hour site-wide, EVERY /p/:slug link returned
+  // 429 until the hour rolled: every share link anyone had ever posted, dead
+  // at the exact moment one of them was working. That ceiling belongs on
+  // /api/generate, where a call spends real money with an AI provider; here
+  // it turned success into an outage. skipGlobal removes it, and perHour is
+  // parked at one trillion as a backstop if the flag is ever dropped.
+  //
+  // The per-IP caps stay. The distinction that matters: refusing ONE
+  // hammering address costs that address, while a global ceiling costs
+  // every visitor the site has. A brake on one caller is a brake; a brake
+  // on all of them is a failure mode.
   const ip = getCallerIp(req);
   const rl = await rateLimit(ip, 'page', {
-    perMin: 60, perHour: 1000, ipPerHour: 400, ipPerDay: 2000
+    perMin: 60, ipPerHour: 400, ipPerDay: 2000,
+    perHour: 1_000_000_000_000,
+    skipGlobal: true
   });
   if (!rl.allowed) {
     res.setHeader('Retry-After', String(rl.retryAfter));
