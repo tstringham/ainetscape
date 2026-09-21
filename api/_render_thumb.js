@@ -33,7 +33,7 @@
 
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
-import { getThumbnail, putThumbnail } from './_db.js';
+import { getThumbnail, putThumbnail, recordThumbError } from './_db.js';
 
 // 3:2 at 1200x800 -- the shape the gallery card, the og:image and the old
 // proxy all assume. deviceScaleFactor 1 keeps the PNG at exactly these pixels;
@@ -127,11 +127,27 @@ export async function renderThumbnail(slug, { force = false } = {}) {
       'ms, ' + Math.round(png.length / 1024) + ' KB');
     return true;
   } catch (err) {
-    // Swallowed on purpose. Naming the failure is what makes a cold-start
-    // problem distinguishable from a slow page in the logs; the Actions
-    // fallback and the schedule handle the recovery.
-    console.error('[thumb] ' + slug + ' failed after ' + (Date.now() - started) +
-      'ms:', err && err.message);
+    /*
+     * Swallowed on purpose -- but recorded where it can be read.
+     *
+     * console.error goes to Vercel's log stream, which is exactly where you
+     * cannot get at it when the CLI is unavailable and the failure happened
+     * twenty minutes ago. On 21 September this render failed silently on its
+     * first real page and there was no way to learn why from the outside:
+     * no thumbnail row, no error, nothing to distinguish a cold-start crash
+     * from a page that simply loaded slowly.
+     *
+     * So the reason lands on the generation row next to the page it belongs
+     * to. It costs one indexed update on a path that has already failed, and
+     * it turns "the thumbnail is missing" into "chromium could not launch".
+     */
+    const why = (err && err.message) || String(err);
+    console.error('[thumb] ' + slug + ' failed after ' + (Date.now() - started) + 'ms:', why);
+    try {
+      await recordThumbError(slug, why);
+    } catch (_) {
+      // The database being unreachable is very likely WHY we are here.
+    }
     return false;
   }
 }

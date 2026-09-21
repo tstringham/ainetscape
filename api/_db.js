@@ -721,6 +721,26 @@ export async function putThumbnail({ slug, png, width, height, source }) {
  * Drives the backfill script. Deliberately returns slugs and titles only --
  * the caller renders from the live URL, so it never needs the body.
  */
+/**
+ * Record why a thumbnail render failed, on the page's own row.
+ *
+ * The render happens inside the generate function and swallows its errors so
+ * it can never fail a generation. That makes a failure invisible: no thumbnail
+ * row, no error, nothing separating "chromium could not launch" from "the page
+ * was slow". console.error reaches Vercel's log stream, which is no help when
+ * the CLI is unavailable and the failure was twenty minutes ago.
+ *
+ * One indexed update, on a path that has already failed.
+ */
+export async function recordThumbError(slug, message) {
+  const d = await getDb();
+  await d.collection('generations').updateOne(
+    { share_slug: slug },
+    { $set: { thumb_error: String(message == null ? '' : message).slice(0, 500),
+              thumb_error_at: new Date() } }
+  );
+}
+
 export async function listSlugsMissingThumbnails(limit = 500) {
   const d = await getDb();
   const have = await d.collection('thumbnails').distinct('_id');
