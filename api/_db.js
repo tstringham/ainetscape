@@ -715,9 +715,17 @@ export async function putThumbnail({ slug, png, width, height, source }) {
   // thumbnail and the site's static social card for og:image without a second
   // query per page render. The bytes stay in their own collection; only the
   // fact travels.
+  //
+  // Clearing thumb_error is part of the same statement on purpose: a stored
+  // PNG is proof the last attempt succeeded, and a stale failure marker on a
+  // healthy row sends the next person debugging a problem that no longer
+  // exists. The error field records the CURRENT state, not the history.
   await d.collection('generations').updateOne(
     { share_slug: String(slug) },
-    { $set: { thumbnail_at: new Date() } }
+    {
+      $set:   { thumbnail_at: new Date() },
+      $unset: { thumb_error: '', thumb_error_at: '' }
+    }
   );
 }
 
