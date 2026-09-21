@@ -166,14 +166,15 @@ export function renderChrome({ title, content, statusText = 'Document: Done', he
      visible (so the chrome metaphor holds) but read as disabled. The AI
      Composer button remains active. Grayscale on the icons sells the
      "no document loaded" state better than opacity alone. */
-  .tbtn:not(.ai-btn) {
+  .tbtn.nav-btn { cursor: pointer; }
+  .tbtn:not(.ai-btn):not(.nav-btn) {
     opacity: 0.42;
     pointer-events: none;
     cursor: default;
     filter: grayscale(0.85);
     color: #555;
   }
-  .tbtn:not(.ai-btn):hover { border-color: transparent; }
+  .tbtn:not(.ai-btn):not(.nav-btn):hover { border-color: transparent; }
   .tbtn.ai-btn {
     background: linear-gradient(180deg, #ff44ff 0%, #ff00cc 32%, #cc00ff 50%, #00ccff 68%, #22ffff 100%);
     color: black; border: 2px solid;
@@ -668,6 +669,21 @@ ${headExtra}
       </div>
       <div class="lbl">Spelling</div>
     </div>
+    <a href="/gallery" style="text-decoration:none;color:inherit;display:flex;">
+      <div class="tbtn nav-btn" title="Gallery of published pages">
+        <div class="icon">
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <rect x="1.5" y="2.5" width="19" height="17" fill="#808080" stroke="black"/>
+            <rect x="3" y="4" width="16" height="14" fill="#dfdfdf" stroke="black"/>
+            <rect x="5" y="6" width="12" height="10" fill="white"/>
+            <circle cx="8" cy="9" r="1.7" fill="#ffcc00"/>
+            <path d="M5 15.9 l3.9 -4.9 l2.5 3 l2 -2 l3.6 3.9 z" fill="#66aa44"/>
+            <rect x="5" y="6" width="12" height="10" fill="none" stroke="black"/>
+          </svg>
+        </div>
+        <div class="lbl">Gallery</div>
+      </div>
+    </a>
     <div class="tb-sep"></div>
     <a href="/?ai=1" style="text-decoration:none;color:inherit;display:flex;">
       <div class="tbtn ai-btn" title="Open AI Composer">
