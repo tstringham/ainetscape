@@ -396,16 +396,26 @@ export async function getPageStats(slug) {
   );
 }
 
+// Increments the hit counter and returns the page's full stat trio in the
+// SAME round trip. It projects upvotes and site_of_the_week as well as hits
+// because the caller needs all three: reading them separately cost a second
+// query on the hottest path on the site, and hits are now counted per page
+// load rather than once per IP per day, so that path runs far more often.
+//
+// Returns null when the filter matches nothing (unknown slug, or a page that
+// is hidden or not AI-authored). A null is NOT an error — the caller falls
+// back to the read-only getPageStats so hidden pages still report counts
+// without accruing new ones.
 export async function incrementHit(slug) {
   if (!slug) return null;
   const d = await getDb();
   const result = await d.collection('generations').findOneAndUpdate(
     { share_slug: String(slug), source: 'ai', is_public: { $ne: false } },
     { $inc: { hits: 1 } },
-    { returnDocument: 'after', projection: { hits: 1, _id: 0 } }
+    { returnDocument: 'after',
+      projection: { hits: 1, upvotes: 1, site_of_the_week: 1, _id: 0 } }
   );
-  const doc = (result && result.value) ? result.value : result;
-  return doc ? (doc.hits || 0) : null;
+  return (result && result.value) ? result.value : result;
 }
 
 // ============================================================

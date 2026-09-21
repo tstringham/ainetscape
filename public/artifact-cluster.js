@@ -21,7 +21,8 @@
   // The cached HTML ships with a skeleton (— placeholders); we fetch
   // live counts on every page load so the numbers are always fresh,
   // independent of the 24h edge cache on the body. The endpoint also
-  // increments hits (deduped one-per-IP-per-day server-side).
+  // increments hits — once per page load, the way a 1997 counter does.
+  // It never answers 429, so a failure here means the network, not a cap.
   const voteCount = cluster.querySelector('[data-vote-count]');
   const hitCount  = cluster.querySelector('[data-hit-count]');
   const sotwEl    = cluster.querySelector('[data-sotw]');
