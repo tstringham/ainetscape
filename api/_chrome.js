@@ -143,6 +143,8 @@ export function renderChrome({ title, content, statusText = 'Document: Done', he
   }
   .menu-item { padding: 2px 8px; cursor: default; user-select: none; }
   .menu-item:hover { background: var(--select); color: var(--select-fg); }
+  .menu-item:not(a) { opacity: 0.42; pointer-events: none; color: #555; }
+  .menu-item:not(a):hover { background: transparent; color: #555; }
   .menu-item .acc { text-decoration: underline; }
   .toolbar {
     display: flex; align-items: stretch; gap: 1px; padding: 3px;
