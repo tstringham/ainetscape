@@ -45,7 +45,8 @@
   ],
   "functions": {
     "api/generate.js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "memory": 1769
     },
     "api/page/[slug]/index.js": {
       "maxDuration": 10

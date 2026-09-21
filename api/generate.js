@@ -32,6 +32,7 @@ import {
 } from './_shared.js';
 import { postProcessPexels } from './_pexels.js';
 import { requestThumbnail } from './_thumbjob.js';
+import { renderThumbnail } from './_render_thumb.js';
 // Unsplash post-processor is retained as the standby failover. The
 // system prompt no longer teaches [UNSPLASH:...] so it usually does
 // nothing — but pages built before the Pexels cutover may still ship
@@ -485,26 +486,27 @@ export default async function handler(req, res) {
         completionOk = true;
 
         /*
-         * The page exists now, so ask for its thumbnail now.
+         * The page exists now, so render its thumbnail now -- here, in this
+         * function, with a real browser. See _render_thumb.js for why the job
+         * moved: microlink was a browser we rented and its quota ran out;
+         * Actions is a browser we borrow and it needs a token, a workflow, a
+         * queue and a cron to all be right, which on 21 September they were
+         * not. This owns one.
          *
-         * Awaited, and it has to be. This was `void` on the reasoning that the
-         * body has already streamed so a generation must never wait on a
-         * cosmetic job -- true, but it is not what `void` bought. Vercel
-         * freezes the instance once the handler resolves, so an un-awaited
-         * fetch to GitHub is racing the teardown: it lands only if the round
-         * trip beats the freeze. Usually it did. "Hedgehog Reveal" published at
-         * 01:28:56 and no workflow ran at all, while the page published eight
-         * minutes earlier had its thumbnail 33 seconds later.
+         * Awaited, and after the body has already streamed. The visitor waits
+         * for nothing -- their page is on screen -- and the invocation stays
+         * alive only long enough to take the picture, capped at 25s inside
+         * renderThumbnail.
          *
-         * Awaiting costs the visitor nothing -- their page is already on
-         * screen -- and only keeps the invocation alive long enough for the
-         * POST to land, capped at the 4s timeout inside requestThumbnail.
-         * It never throws and never rejects, so this cannot fail a generation
-         * and cannot reach the duplicate-key handler below.
+         * renderThumbnail never throws; it returns false. So this cannot fail
+         * a generation and cannot reach the duplicate-key handler below.
          *
-         * The three-hourly schedule stays as the backstop it always was.
+         * requestThumbnail stays as the fallback and only fires when the
+         * render produced nothing, with the five-minute schedule behind it.
+         * A thumbnail pipeline with one leg is how we got here.
          */
-        await requestThumbnail(shareSlug);
+        const rendered = await renderThumbnail(shareSlug);
+        if (!rendered) await requestThumbnail(shareSlug);
       } catch (err) {
         // Duplicate-key error = a concurrent publish claimed this exact
         // contentHash between our pre-write check and this write (the partial

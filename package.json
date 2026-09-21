@@ -14,8 +14,10 @@
     "vercel-build": "npm run build:ga && npm run build:pages"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^153.0.0",
     "@upstash/redis": "^1.34.3",
-    "mongodb": "^6.12.0"
+    "mongodb": "^6.12.0",
+    "puppeteer-core": "^25.11.0"
   },
   "devDependencies": {
     "marked": "^18.0.4",
