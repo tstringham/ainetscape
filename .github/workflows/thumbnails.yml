@@ -18,10 +18,24 @@ name: thumbnails
 
 on:
   schedule:
-    # Every three hours. Hourly would cost ~1,440 minutes a month against a
-    # private repo's 2,000-minute allowance, which is too close to the edge for
-    # a cosmetic job; three-hourly is ~480 and leaves room for everything else.
-    - cron: '17 */3 * * *'
+    # Every five minutes, which is the floor GitHub accepts.
+    #
+    # This was three-hourly to stay inside "a private repo's 2,000-minute
+    # allowance". That allowance does not apply: the repository is public
+    # (`gh repo view --json visibility` says PUBLIC), and Actions minutes are
+    # free and unlimited on public repositories. The schedule was rationed
+    # against a budget that never existed.
+    #
+    # It matters because the schedule is the only trigger that does not depend
+    # on GITHUB_DISPATCH_TOKEN. When publish-time dispatch stopped working on
+    # 21 September, three hours was the whole exposure; five minutes is now the
+    # worst case even with the token dead. GitHub runs schedules best-effort
+    # and slips under load, so treat this as "within ten or fifteen minutes",
+    # not a guarantee.
+    #
+    # An idle run is ~35 seconds: `--count` answers "is there work?" with one
+    # indexed query and exits before Chromium is ever fetched.
+    - cron: '*/5 * * * *'
   # So a new page can be given its thumbnail immediately rather than waiting for
   # the next slot.
   workflow_dispatch:
