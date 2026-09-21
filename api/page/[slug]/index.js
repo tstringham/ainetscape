@@ -203,6 +203,56 @@ const CTA_DISPATCH_SRC = 'https://ainetscape.com/cta-dispatch.js';
 const LOC_STUB = '<script>window.__aiLoc={set href(v){if(/^\\s*mailto:/i.test(String(v))){'
   + '(window.__aiMailQueue=window.__aiMailQueue||[]).push(String(v));}else{window.location.href=v;}},'
   + 'get href(){return window.location.href;}};</script>';
+/*
+ * Keep typed text visible.
+ *
+ * "THE LOST FLAVOURS" shipped with `input, textarea { background:
+ * transparent; color: var(--cream) }` on a page whose background IS
+ * --cream. Typing worked perfectly and painted every character in the
+ * colour of the paper, so the form read as completely broken. The model
+ * had written a dark-page palette and then used it on a light page.
+ *
+ * This is a whole class of failure, not one page: the model picks the
+ * field colour and the page colour independently, and nothing checks that
+ * they differ. A visitor cannot report it usefully either -- "typing does
+ * nothing" is what it looks like from the outside.
+ *
+ * So the check happens in the browser, where the real computed colours
+ * are known. For each field: find the nearest ancestor with an actual
+ * background, and compare it to the text colour by WCAG contrast ratio.
+ * Below 1.6 the text is invisible or nearly so, and the field gets #111
+ * or #fff -- whichever contrasts better with what is behind it.
+ *
+ * 1.6 is deliberately low. Ordinary body text is 4.5 or more and a
+ * deliberately soft field might be 2.5; this only rescues text that
+ * cannot be read at all, and leaves every design decision above that
+ * line alone. Buttons, checkboxes and hidden inputs are skipped -- they
+ * have no typed text to lose.
+ *
+ * Runs at render, so it reaches every page already published.
+ */
+const LEGIBLE_FIELDS = `<script>/*__aiLegibleFields*/(function(){
+function p(s){var m=/rgba?\\(([^)]+)\\)/.exec(s||'');if(!m)return null;
+var v=m[1].split(',').map(parseFloat);return{r:v[0],g:v[1],b:v[2],a:v.length>3?v[3]:1};}
+function L(c){function f(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}
+return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b);}
+function R(a,b){var x=L(a),y=L(b);return x<y?(y+0.05)/(x+0.05):(x+0.05)/(y+0.05);}
+function bg(e){for(var n=e;n&&n.nodeType===1;n=n.parentElement){
+var c=p(getComputedStyle(n).backgroundColor);if(c&&c.a>0.1)return c;}
+return{r:255,g:255,b:255,a:1};}
+function fix(e){var s=getComputedStyle(e),f=p(s.webkitTextFillColor)||p(s.color);if(!f)return;
+var b=bg(e);if(f.a>0.1&&R(f,b)>=1.6)return;
+var c=R({r:17,g:17,b:17},b)>=R({r:255,g:255,b:255},b)?'#111':'#fff';
+e.style.setProperty('color',c,'important');
+e.style.setProperty('-webkit-text-fill-color',c,'important');
+e.style.setProperty('caret-color',c,'important');}
+function run(){var q=document.querySelectorAll('input,textarea,select'),i,t;
+for(i=0;i<q.length;i++){t=(q[i].type||'').toLowerCase();
+if(t==='hidden'||t==='checkbox'||t==='radio'||t==='range'||t==='color'||t==='file'
+||t==='submit'||t==='button'||t==='reset'||t==='image')continue;fix(q[i]);}}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run);else run();
+window.addEventListener('load',run);})();</scr`+`ipt>`;
+
 export function prepareDocument(html, slug) {
   let out = String(html == null ? '' : html);
   out = out.replace(/window\.location\.href(\s*)=(?!=)/g, '__aiLoc.href$1=');
@@ -248,6 +298,11 @@ export function prepareDocument(html, slug) {
     if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, () => tag + '</body>');
     else if (/<\/html>/i.test(out)) out = out.replace(/<\/html>/i, () => tag + '</html>');
     else out = out + tag;
+  }
+  if (!out.includes('__aiLegibleFields')) {
+    if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, () => LEGIBLE_FIELDS + '</body>');
+    else if (/<\/html>/i.test(out)) out = out.replace(/<\/html>/i, () => LEGIBLE_FIELDS + '</html>');
+    else out = out + LEGIBLE_FIELDS;
   }
   return out;
 }
