@@ -3593,9 +3593,16 @@ function closeMenu() {
 }
 
 function formatLabel(label, acc) {
-  if (!acc) return escapeHTML(label);
-  const idx = label.toLowerCase().indexOf(String(acc).toLowerCase());
-  if (idx < 0) return escapeHTML(label);
+  if (acc === undefined || acc === null || acc === '') return escapeHTML(label);
+  // A number is an explicit character index rather than a letter to search
+  // for. "Show Status Bar" and "Hide Status Bar" both want the S of Status,
+  // and a letter search finds Show in one and Status in the other, so the
+  // underline would jump as the label toggled. Both verbs are four letters,
+  // so one index is right in both states.
+  const idx = typeof acc === 'number'
+    ? acc
+    : label.toLowerCase().indexOf(String(acc).toLowerCase());
+  if (idx < 0 || idx >= label.length) return escapeHTML(label);
   return escapeHTML(label.slice(0, idx)) +
     '<span class="acc">' + escapeHTML(label[idx]) + '</span>' +
     escapeHTML(label.slice(idx + 1));
@@ -3620,7 +3627,11 @@ function buildDropdown(items, left, top) {
     if (item.type === 'submenu') row.classList.add('has-submenu');
 
     const lbl = document.createElement('span');
-    lbl.innerHTML = formatLabel(item.label, item.acc);
+    // A label may be a function. The dropdown is rebuilt on every open, so a
+    // toggle can name what the click is about to do -- "Hide Toolbar" while
+    // the toolbar is showing -- rather than naming one direction for ever.
+    lbl.innerHTML = formatLabel(
+      typeof item.label === 'function' ? item.label() : item.label, item.acc);
     row.appendChild(lbl);
 
     if (item.shortcut) {
@@ -3851,10 +3862,17 @@ function findInPage() {
   }
 }
 
+// What is actually on screen, not what the inline style says. The menu label
+// and the click have to agree about which way the toggle is pointing.
+function barHidden(selector) {
+  const el = document.querySelector(selector);
+  return !el || window.getComputedStyle(el).display === 'none';
+}
+
 function toggleBar(selector, label) {
   const el = document.querySelector(selector);
   if (!el) return;
-  const hidden = el.style.display === 'none';
+  const hidden = barHidden(selector);
   el.style.display = hidden ? '' : 'none';
   setStatus((hidden ? 'Showing ' : 'Hiding ') + label + '.');
 }
@@ -4123,12 +4141,16 @@ const MENUS = {
     { label: 'Preferences...',  acc: 'e',                    action: () => openPreferencesDialog() }
   ],
   View: [
-    { label: 'Show Toolbar',     acc: 'T', action: () => toggleBar('#main-toolbar', 'toolbar') },
-    { label: 'Show Format Bar',  acc: 'F', action: () => toggleBar('.format-bar', 'format bar') },
-    { label: 'Show Status Bar',  acc: 'S', action: () => toggleBar('.statusbar',  'status bar') },
+    { label: () => barHidden('#main-toolbar') ? 'Show Toolbar' : 'Hide Toolbar',
+      acc: 'T', action: () => toggleBar('#main-toolbar', 'toolbar') },
+    { label: () => barHidden('.format-bar') ? 'Show Format Bar' : 'Hide Format Bar',
+      acc: 'F', action: () => toggleBar('.format-bar', 'format bar') },
+    { label: () => barHidden('.statusbar') ? 'Show Status Bar' : 'Hide Status Bar',
+      acc: 5,   action: () => toggleBar('.statusbar',  'status bar') },
     { type: 'separator' },
     { label: 'Reload',          acc: 'R', shortcut: 'Ctrl+R', action: () => location.reload() },
-    { label: 'Page Source',     acc: 'o', shortcut: 'Ctrl+U', action: () => toggleSource() },
+    { label: () => inSourceMode ? 'Hide Page Source' : 'View Page Source',
+      acc: 'o', shortcut: 'Ctrl+U', action: () => toggleSource() },
     { label: 'Page Info',       acc: 'I',                     action: () => showPageInfo() },
     { type: 'separator' },
     { label: 'Increase Text Size', acc: 'n', shortcut: 'Ctrl++', action: () => nudgeEditorFont(+1) },
