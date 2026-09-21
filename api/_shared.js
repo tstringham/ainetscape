@@ -91,9 +91,12 @@ function memRateLimit(ip, kind, opts) {
   const hrStart  = now - 60 * 60 * 1000;
   const dayStart = now - 24 * 60 * 60 * 1000;
 
-  // Global hourly cap — always enforced, even for an admin bypass.
-  const gBucket = (memGlobalBuckets.get(kind) || []).filter(t => t > hrStart);
-  if (gBucket.length >= opts.perHour) {
+  // Global hourly cap — enforced even for an admin bypass, EXCEPT when
+  // the caller passes skipGlobal (see rateLimit() below).
+  const gBucket = opts.skipGlobal
+    ? null
+    : (memGlobalBuckets.get(kind) || []).filter(t => t > hrStart);
+  if (gBucket && gBucket.length >= opts.perHour) {
     memGlobalBuckets.set(kind, gBucket);
     return { allowed: false, scope: 'global', retryAfter: 3600 };
   }
@@ -134,8 +137,10 @@ function memRateLimit(ip, kind, opts) {
     }
   }
 
-  gBucket.push(now);
-  memGlobalBuckets.set(kind, gBucket);
+  if (gBucket) {
+    gBucket.push(now);
+    memGlobalBuckets.set(kind, gBucket);
+  }
   return { allowed: true };
 }
 
@@ -144,9 +149,17 @@ export async function rateLimit(ip, kind = 'gen', {
   perHour    = 200,  // global, per-hour (hard ceiling across all callers)
   ipPerHour  = 20,   // per-IP, per-hour (sustained pacing cap)
   ipPerDay   = 40,   // per-IP, per-day (total-volume cap, defeats IP-rotation pacing)
-  skipPerIp  = false // admin bypass: skip the three per-IP caps, KEEP the global one
+  skipPerIp  = false,// admin bypass: skip the three per-IP caps, KEEP the global one
+  skipGlobal = false // skip the global ceiling — for endpoints where denial is the harm
 } = {}) {
-  const opts = { perMin, perHour, ipPerHour, ipPerDay, skipPerIp };
+  // WHY skipGlobal EXISTS: the global hourly ceiling was built for
+  // /api/generate, where every call spends real money on an AI provider and
+  // a hard site-wide cap is the whole point. It is the wrong instrument for
+  // a cheap read-shaped endpoint: there, tripping the ceiling doesn't save
+  // anything, it just breaks the feature for everyone for the rest of the
+  // hour. Endpoints that should degrade rather than deny pass skipGlobal
+  // and act on `allowed` themselves instead of returning 429.
+  const opts = { perMin, perHour, ipPerHour, ipPerDay, skipPerIp, skipGlobal };
   const redis = getRedis();
   if (!redis) return memRateLimit(ip, kind, opts);
   try {
@@ -175,9 +188,11 @@ export async function rateLimit(ip, kind = 'gen', {
       if (ipDay > ipPerDay) return { allowed: false, scope: 'ip-day', retryAfter: 24 * 3600 };
     }
 
-    const globalCount = await redis.incr(globalKey);
-    if (globalCount === 1) await redis.expire(globalKey, 7200);
-    if (globalCount > perHour) return { allowed: false, scope: 'global', retryAfter: 3600 };
+    if (!skipGlobal) {
+      const globalCount = await redis.incr(globalKey);
+      if (globalCount === 1) await redis.expire(globalKey, 7200);
+      if (globalCount > perHour) return { allowed: false, scope: 'global', retryAfter: 3600 };
+    }
 
     return { allowed: true };
   } catch (err) {

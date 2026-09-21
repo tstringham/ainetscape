@@ -414,11 +414,17 @@ export async function incrementHit(slug) {
 // siteStats holds one row per tracked surface; today only 'homepage'
 // exists. Doc shape: { _id: 'homepage', count: <int>, updatedAt: Date }.
 //
-// The seed value (420) is loaded the first time the doc is touched,
-// so a fresh deployment starts with a plausible-looking count rather
-// than 1 — period sites all faked their counters at launch and so
-// do we. The seed itself counts as the first visit; subsequent
-// IP-deduped visits each $inc by 1.
+// HOMEPAGE_SEED is loaded the first time the doc is touched, so a
+// fresh deployment starts with a plausible-looking count rather than
+// 1 — period sites all faked their counters at launch and so do we.
+// The seed itself counts as the first visit; every subsequent visit
+// $inc's by 1 (per load, not per IP/day — see e6b7fc5).
+//
+// The seed is 1042, chosen in dfe26ca to match the starter doc's
+// primed 01042 odometer. That means a freshly-seeded row and a
+// homepage whose counter fetch never landed BOTH read 01042, so the
+// number alone cannot tell you which happened. Query this row before
+// concluding the counter reset — it only ever moves up.
 // ============================================================
 const HOMEPAGE_SEED = 1042;
 
