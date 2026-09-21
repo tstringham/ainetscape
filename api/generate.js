@@ -487,13 +487,24 @@ export default async function handler(req, res) {
         /*
          * The page exists now, so ask for its thumbnail now.
          *
-         * `void`, never awaited: the body has already streamed to the user and
-         * a generation must not wait on, or fail because of, a cosmetic job.
-         * `requestThumbnail` swallows everything and the three-hourly schedule
-         * is the backstop, so the worst case here is the behaviour we had
-         * before -- a placeholder for a few hours.
+         * Awaited, and it has to be. This was `void` on the reasoning that the
+         * body has already streamed so a generation must never wait on a
+         * cosmetic job -- true, but it is not what `void` bought. Vercel
+         * freezes the instance once the handler resolves, so an un-awaited
+         * fetch to GitHub is racing the teardown: it lands only if the round
+         * trip beats the freeze. Usually it did. "Hedgehog Reveal" published at
+         * 01:28:56 and no workflow ran at all, while the page published eight
+         * minutes earlier had its thumbnail 33 seconds later.
+         *
+         * Awaiting costs the visitor nothing -- their page is already on
+         * screen -- and only keeps the invocation alive long enough for the
+         * POST to land, capped at the 4s timeout inside requestThumbnail.
+         * It never throws and never rejects, so this cannot fail a generation
+         * and cannot reach the duplicate-key handler below.
+         *
+         * The three-hourly schedule stays as the backstop it always was.
          */
-        void requestThumbnail(shareSlug);
+        await requestThumbnail(shareSlug);
       } catch (err) {
         // Duplicate-key error = a concurrent publish claimed this exact
         // contentHash between our pre-write check and this write (the partial
