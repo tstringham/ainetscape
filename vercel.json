@@ -63,6 +63,10 @@
     "api/cron/site-of-the-week.js": {
       "maxDuration": 60
     },
+    "api/cron/thumbnails.js": {
+      "maxDuration": 120,
+      "memory": 1769
+    },
     "api/site-stats/homepage.js": {
       "maxDuration": 10
     },
@@ -95,6 +99,7 @@
     { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" }
   ],
   "crons": [
-    { "path": "/api/cron/site-of-the-week", "schedule": "0 0 * * 1" }
+    { "path": "/api/cron/site-of-the-week", "schedule": "0 0 * * 1" },
+    { "path": "/api/cron/thumbnails", "schedule": "*/5 * * * *" }
   ]
 }
