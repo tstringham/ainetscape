@@ -113,10 +113,17 @@ export function decorate(html, slug, doc) {
   // rather than to /api/thumb's placeholder: that placeholder is an SVG, and
   // Facebook, Twitter and iMessage all reject SVG for og:image. A generic but
   // valid card beats a specific but rejected one.
-  const ogImageUrl = (doc && doc.thumbnail_at)
+  const hasRender = !!(doc && doc.thumbnail_at);
+  const ogImageUrl = hasRender
     ? 'https://ainetscape.com/api/thumb/' + encodeURIComponent(slug)
     : 'https://ainetscape.com/og-image.png';
   const safeImg = escapeAttr(ogImageUrl);
+  // The two images are not the same shape and the tags have to say so. The
+  // static card is 1200x630; a rendered thumbnail is 1200x800, the 3:2 the
+  // gallery and the renderer both use. This declared 630 for both, so every
+  // page that HAD a thumbnail advertised a crop it does not have, and a
+  // scraper that trusts the tags over the bytes lays out the wrong box.
+  const ogImageHeight = hasRender ? '800' : '630';
   /*
    * A description drawn from what the page says, and a canonical.
    *
@@ -135,7 +142,7 @@ export function decorate(html, slug, doc) {
     '<meta property="og:description" content="' + escapeAttr(metaDescription) + '">' +
     '<meta property="og:image" content="' + safeImg + '">' +
     '<meta property="og:image:width" content="1200">' +
-    '<meta property="og:image:height" content="630">' +
+    '<meta property="og:image:height" content="' + ogImageHeight + '">' +
     '<meta name="twitter:card" content="summary_large_image">' +
     '<meta name="twitter:title" content="' + safeTitle + '">' +
     '<meta name="twitter:description" content="Made with AI Netscape.">' +
