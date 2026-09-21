@@ -30,8 +30,22 @@ export default async function handler(req, res) {
   // Separate bucket from gen/page so vote bursts can't drain the
   // generation budget. Per-IP burst loose enough to allow a quick scroll
   // through the gallery + tap a few cards without hitting the limit.
+  //
+  // PER-IP ONLY. This used to also pass perHour: 300 — rateLimit()'s GLOBAL
+  // ceiling across every caller — so 300 votes sitewide in one clock hour
+  // disabled voting for everybody until the hour rolled. A vote is one $inc;
+  // there is no budget to protect here, and the day that ceiling fires is by
+  // definition the day the gallery is busiest. Ballot-stuffing is already
+  // stopped twice over, by the per-IP caps below and by recordVote()'s
+  // one-vote-per-IP-per-slug SETNX.
+  //
+  // The per-IP caps stay and a 429 from them is correct: refusing one address
+  // that is spamming votes costs that address. The global ceiling cost
+  // everyone, which is a different thing wearing the same name.
   const rl = await rateLimit(ip, 'vote', {
-    perMin: 20, perHour: 300, ipPerHour: 120, ipPerDay: 400
+    perMin: 20, ipPerHour: 120, ipPerDay: 400,
+    perHour: 1_000_000_000_000,
+    skipGlobal: true
   });
   if (!rl.allowed) {
     res.setHeader('Retry-After', String(rl.retryAfter));
