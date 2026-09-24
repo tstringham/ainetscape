@@ -33,9 +33,21 @@ const VALID_SLUG = /^[A-Za-z0-9]{6,20}$/;
 // every card in the gallery for ever.
 const STORED_CACHE = 'public, max-age=31536000, immutable';
 
-// Ten minutes. Long enough that a gallery refresh is cheap, short enough that a
-// page which gets its render five minutes from now stops showing this.
-const PLACEHOLDER_CACHE = 'public, max-age=600';
+// no-store. This is the "not ready yet" answer, and a not-ready answer must
+// never outlive the thing it is standing in for.
+//
+// It was `public, max-age=600` with the reasoning "short enough that a page
+// which gets its render five minutes from now stops showing this" — but the
+// render lands about three minutes after publish, so ten minutes was longer
+// than the wait it was meant to cover. A visitor who opened the gallery in
+// that window cached the placeholder and kept seeing "Preview being
+// developed" for ten more minutes after the real PNG existed. The thumbnail
+// pipeline was working; the card was showing a stale answer about it.
+//
+// Caching belongs on the stored PNG (STORED_CACHE, a year, immutable) — that
+// one never changes. This one changes the moment the render lands, which is
+// exactly why it cannot be cached. Serving it costs one indexed findOne.
+const PLACEHOLDER_CACHE = 'no-store';
 
 /**
  * The stand-in, in the house style.
