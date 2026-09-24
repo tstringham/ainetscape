@@ -830,3 +830,65 @@ export async function upsertComposerPremises(rows) {
   }
   return { added, updated };
 }
+
+// ============================================================
+// Contact / CTA submissions.
+//
+// Every submission is written here BEFORE delivery is attempted, and the
+// delivery outcome is stamped on the row afterwards. That ordering is the
+// whole point.
+//
+// api/cta.js used to email and nothing else, so when RESEND_API_KEY was not
+// configured it logged one line and returned 200 — the visitor saw the
+// confirmation, the owner saw nothing, and the message was gone. A config gap
+// was silently destroying real mail, and from outside a working form and a
+// broken one were identical. Persisting first makes delivery an enhancement
+// rather than the only copy: fix the key later and nothing that arrived in the
+// meantime was lost.
+//
+// Row: { ts, title, action, url, fields, ip_hash, delivered, delivery_error,
+//        delivered_at }
+// ============================================================
+export async function recordSubmission(payload) {
+  const d = await getDb();
+  const doc = {
+    ts: new Date(),
+    title: payload.title || '',
+    action: payload.action || '',
+    url: payload.url || '',
+    fields: Array.isArray(payload.fields) ? payload.fields : [],
+    ip_hash: payload.ip_hash || null,
+    delivered: false,
+    delivery_error: null,
+    delivered_at: null
+  };
+  const r = await d.collection('submissions').insertOne(doc);
+  return r.insertedId;
+}
+
+// Stamps the outcome. `error` null means delivered. Never throws into the
+// request path: a failure to record the outcome must not lose the submission
+// that is already safely stored.
+export async function markSubmissionDelivered(id, error) {
+  if (!id) return;
+  const d = await getDb();
+  await d.collection('submissions').updateOne(
+    { _id: id },
+    { $set: { delivered: !error, delivery_error: error || null, delivered_at: new Date() } }
+  );
+}
+
+// How many submissions are sitting undelivered, and when the oldest arrived.
+// Read-only; used by the admin health check so a config gap is visible without
+// reading a function log.
+export async function submissionHealth() {
+  const d = await getDb();
+  const col = d.collection('submissions');
+  const undelivered = await col.countDocuments({ delivered: false });
+  const total = await col.countDocuments();
+  const oldest = undelivered
+    ? await col.findOne({ delivered: false }, { projection: { ts: 1, delivery_error: 1, _id: 0 }, sort: { ts: 1 } })
+    : null;
+  return { total, undelivered, oldestUndelivered: oldest ? oldest.ts : null,
+           lastError: oldest ? oldest.delivery_error : null };
+}

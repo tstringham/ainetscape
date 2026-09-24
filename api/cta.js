@@ -21,6 +21,7 @@
 // so both CORS-simple (text/plain) and preflighted (application/json) posts get
 // through.
 
+import crypto from 'crypto';
 import { getCallerIp, parseBody, rateLimit } from './_shared.js';
 
 const OWNER_INBOX = 'webmaster@ainetscape.com';
@@ -74,11 +75,45 @@ export default async function handler(req, res) {
   const fields  = normalizeFields(body.fields);
   const replyTo = pickReplyTo(fields);
 
+  // Persist BEFORE attempting delivery.
+  //
+  // This endpoint used to email and nothing else. With RESEND_API_KEY absent
+  // it logged one line and returned 200: the visitor saw the confirmation, the
+  // owner got nothing, and the message was destroyed. Storing first turns
+  // delivery into an enhancement rather than the only copy of the message — a
+  // key that is missing today can be fixed tomorrow without having lost the
+  // mail that arrived in between.
+  //
+  // A storage failure must not cost the visitor their confirmation either, so
+  // it is logged and the send is still attempted.
+  let submissionId = null;
+  try {
+    const { recordSubmission } = await import('./_db.js');
+    submissionId = await recordSubmission({
+      title, action, url, fields,
+      ip_hash: hashIp(getCallerIp(req))
+    });
+  } catch (err) {
+    console.error('[cta] could not store submission:', err && (err.message || err));
+  }
+
+  async function finish(error) {
+    if (submissionId) {
+      try {
+        const { markSubmissionDelivered } = await import('./_db.js');
+        await markSubmissionDelivered(submissionId, error);
+      } catch (_) { /* stored already; the stamp is a nicety */ }
+    }
+    // ALWAYS 200 — the visitor's confirmation must never depend on delivery.
+    return res.status(200).json({ ok: true });
+  }
+
   const resendKey = process.env.RESEND_API_KEY;
   if (!resendKey) {
-    // Config gap — log, but still 200 so the visitor sees the confirmation.
-    console.error('[cta] RESEND_API_KEY not set — dropping submission for', JSON.stringify(title));
-    return res.status(200).json({ ok: true });
+    // Config gap. The submission is SAVED — see the note above — so this is a
+    // delivery outage, not data loss. /api/admin/health reports the backlog.
+    console.error('[cta] RESEND_API_KEY not set — submission stored but not emailed:', JSON.stringify(title));
+    return finish('RESEND_API_KEY not set');
   }
 
   const subject = ('[AI Netscape] ' + title).slice(0, 180);
@@ -101,13 +136,24 @@ export default async function handler(req, res) {
       let detail = '';
       try { detail = JSON.stringify(await r.json()); } catch (_) {}
       console.error('[cta] Resend rejected:', r.status, detail);
+      return finish('Resend rejected: ' + r.status + ' ' + detail.slice(0, 200));
     }
   } catch (err) {
     console.error('[cta] Resend network failure:', err && err.message);
+    return finish('Resend network failure: ' + String(err && err.message).slice(0, 200));
   }
 
-  // ALWAYS 200 — the visitor's confirmation must never depend on delivery.
-  return res.status(200).json({ ok: true });
+  return finish(null);
+}
+
+// Salted hash so a submission can be correlated with abuse without storing the
+// raw address. Same salt as the rest of the site.
+function hashIp(ip) {
+  try {
+    return crypto.createHash('sha256')
+      .update((process.env.IP_HASH_SALT || 'ainetscape-default-salt-change-me') + String(ip))
+      .digest('hex').slice(0, 16);
+  } catch (_) { return null; }
 }
 
 // Single-line fields (title/action/url): collapse whitespace, trim, cap.
