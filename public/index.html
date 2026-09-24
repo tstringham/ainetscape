@@ -1613,6 +1613,10 @@ let currentDocHTML = null;
 // or we're showing the starter doc / an opened fragment).
 let currentShareSlug = null;
 
+// Shown when an author clicks a control on a mounted page and nothing happens.
+// PLACEHOLDER COPY — rewrite to taste; it is the only new visible string here.
+const CONTROL_INERT_MSG = 'Controls are inert while editing. Use Preview to operate this page.';
+
 function renderGeneratedIntoIframe(html) {
   if (inSourceMode) toggleSource();
   const iframe = document.createElement('iframe');
@@ -1640,6 +1644,23 @@ function renderGeneratedIntoIframe(html) {
     d.addEventListener('click', e => {
       const img = e.target && e.target.tagName === 'IMG' ? e.target : null;
       currentSelectedImage = img;
+
+      // Say why a control did nothing.
+      //
+      // designMode='on' is what makes the mounted page editable, and it also
+      // means a click on a submit button lands a caret in the button instead
+      // of submitting. Authors read that as a broken form — reasonably, since
+      // nothing happens and nothing explains it.
+      //
+      // We deliberately do NOT dispatch here. In an editor you click things to
+      // position the caret, so a live submit button would fire a real message
+      // to the webmaster on every stray click while laying out a page. Preview
+      // runs the document as a real page with the dispatcher active; that is
+      // the place to operate a form, and this points there.
+      const ctl = e.target && e.target.closest
+        ? e.target.closest('button, input[type=submit], input[type=button], [onclick]')
+        : null;
+      if (ctl) setStatus(CONTROL_INERT_MSG);
     });
   });
   editor.innerHTML = '';
