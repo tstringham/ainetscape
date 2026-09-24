@@ -1939,16 +1939,63 @@ ${bodyHTML}
 </HTML>`;
 }
 
+// Preview opens the document as a real page at a blob: URL, NOT via
+// document.open()/write()/close().
+//
+// Why it matters: generated pages carry
+// <script src=".../cta-dispatch.js" defer>, and that script is what makes
+// contact forms and CTA buttons work. `defer` is meaningless in a document
+// built with document.write — the tag lands in the DOM and is never fetched,
+// so __aiDispatch is never defined and every control in the preview is dead.
+// Re-injecting the script after close() does not rescue it either; the written
+// document sits in readyState 'loading' and never runs it.
+//
+// A blob: URL is a real navigation to a real document, so it parses normally
+// and `defer` means what it says. It also inherits this origin, so the
+// dispatcher's POST to /api/cta stays same-origin.
+//
+// This is the only place an author can exercise their own page before
+// publishing — the editor cannot, because designMode='on' turns a click on a
+// button into a caret in the button. A dead preview meant the only way to test
+// a form was to ship it.
+function previewHtmlWithBase(html) {
+  // document.write inherited this page as the base URL, so relative paths in
+  // a preview resolved against the site. A blob: URL does not, which would
+  // quietly break <img src="/images/…"> in a hand-built document. Restore it.
+  if (/<base\b/i.test(html)) return html;
+  const tag = '<base href="' + location.origin + '/">';
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, m => m + tag);
+  if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, m => m + '<head>' + tag + '</head>');
+  return tag + html;
+}
+
 function preview() {
   const html = getActiveIframe()
     ? getCurrentIframeHTML()
     : wrapAsFullPage(editor.innerHTML, docTitle);
-  const w = window.open('', '_blank');
+
+  let url = null;
+  try {
+    url = URL.createObjectURL(new Blob([previewHtmlWithBase(html)], { type: 'text/html' }));
+  } catch (_) { url = null; }
+
+  const w = window.open(url || '', '_blank');
   if (!w) {
+    if (url) { try { URL.revokeObjectURL(url); } catch (_) {} }
     showAlert('Preview', 'The preview window could not be opened.\n\nPlease allow pop-up windows for this site and try again.');
     return;
   }
-  w.document.open(); w.document.write(html); w.document.close();
+
+  // No Blob support: fall back to the old path. Controls stay dead, but a
+  // preview that renders beats no preview at all.
+  if (!url) {
+    w.document.open(); w.document.write(html); w.document.close();
+    return;
+  }
+
+  // Release the object URL once the preview has had time to load it. Revoking
+  // immediately can race the navigation in some browsers.
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000);
 }
 
 function toggleSource() {
