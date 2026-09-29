@@ -50,6 +50,7 @@ import { runWaterfall, resolveRunnableWaterfall, DEFAULT_WATERFALL } from './_ai
 // generated HTML's structural skeleton (image URLs / dates / counters stripped)
 // so true structural dupes can be detected and re-rolled at publish.
 import { contentHash as computeContentHash } from './_dedup.js';
+import { injectResponsiveGuard } from './_responsive_guard.js';
 
 // Provider waterfall timing. Each rung is buffered (not streamed) so we can
 // fall through on failure; the function maxDuration is 300s (vercel.json), so
@@ -135,6 +136,14 @@ LAYOUT (non-negotiable) — the page must render cleanly at ANY width, from full
 - Hero and section images must NEVER overlap or clip the headline, nav, or body text. A hero image belongs BEHIND the text (as a background with the copy layered over it) or in its OWN column/row beside or below the heading — NEVER absolutely/fixed positioned on top of the heading so it covers the words. If in doubt, stack image and text vertically.
 - Use fluid, responsive layout: max-width containers, flex/grid that wraps, and every <img> constrained with max-width:100%; height:auto. Include at least one @media breakpoint so multi-column sections stack on narrow screens. No fixed pixel widths or oversized images that force horizontal scrolling.
 - The page is shown inside a ~780px-wide framed viewport AND full-width — it must look correct in both. Nothing overflows sideways; nothing overlaps.
+
+MOBILE (non-negotiable) — the page MUST reflow to a 360px-wide screen with no horizontal scrolling and nothing clipped. This constrains LAYOUT ONLY: be as ambitious with the design as everything above demands, then make that same design fit a phone.
+- NEVER set a min-width on any element. A single \`min-width\` larger than the screen pins the whole document wider than the viewport, and because flex items default to \`min-width:auto\` it drags every ancestor with it. If a wide row must scroll, put \`overflow-x:auto\` on the PARENT and leave the child's width \`max-content\` — never \`min-width\`.
+- No fixed-px width on any container. Use \`max-width\` with \`width:100%\`.
+- Every flex or grid row that holds more than one item MUST wrap or stack below 600px: \`flex-wrap:wrap\`, or a \`@media (max-width:600px)\` rule that sets \`grid-template-columns:1fr\` / \`flex-direction:column\`.
+- Display type MUST use \`clamp()\`, and the FLOOR must fit 360px — \`clamp(2rem, 8vw, 6rem)\`, not \`clamp(3.2rem, 8vw, 6.5rem)\`. A floor of 3.2rem is ~51px, and one long word at that size overflows a phone on its own. The floor is what renders on mobile; pick it for the phone, not the desktop.
+- NEVER \`white-space:nowrap\` on a headline, nav row, or anything containing a sentence.
+- Write the \`@media (max-width:600px)\` block and actually USE it. Emitting a breakpoint that only restyles one minor element is the common failure.
 
 COPYRIGHT + DATES (in-character):
 - If the page includes a footer copyright line, the year MUST be 1997 (e.g. "© 1997 Whiskers Esq. Law").
@@ -429,6 +438,10 @@ export default async function handler(req, res) {
     // row write + response (so both /p/:slug and the live preview carry it).
     if (event === 'ai_generation_completed' && finalBody) {
       finalBody = injectCtaDispatch(finalBody, shareSlug);
+      // Covers the editor canvas, which mounts this stream directly and never
+      // passes through prepareDocument(). Also bakes the guard into the stored
+      // copy, so a page is correct even if served by some future path.
+      finalBody = injectResponsiveGuard(finalBody);
     }
 
     // Headers + body written together at the end. Done now (rather than

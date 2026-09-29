@@ -170,3 +170,65 @@ Pass = `scrollWidth <= clientWidth + 2` at 375px, and at 1280px a
 any change, so desktop no-op is proven against numbers rather than asserted).
 
 Branch pushed for a Vercel **preview** only. No production deploy.
+
+---
+
+# RESULTS (Steps 2 + 3 complete)
+
+## What shipped
+
+- `api/_responsive_guard.js` — new. `injectResponsiveGuard(html)`, idempotent, never throws.
+- `api/page/[slug]/index.js` — `prepareDocument()` calls it **last** so the guard lands
+  **first** inside `<head>` (author CSS must keep winning on equal specificity). The old
+  inline `img,svg,video,canvas{...}` rule moved into the guard verbatim.
+- `api/generate.js` — called beside `injectCtaDispatch`, covering the editor canvas and
+  the stored copy. Plus the `MOBILE (non-negotiable)` SYSTEM_PROMPT block.
+
+## Verification — 24/24 pass
+
+Pass criterion is **widest element vs viewport**, not `scrollWidth`.
+`scrollWidth` lies once `overflow-x:hidden` is present: it reports the clipped width,
+so a page that is cut off measures identical to one that reflowed. That nearly
+shipped a false pass — see deviation 1.
+
+| surface | 375px | 1280px |
+|---|---|---|
+| `/raw` standalone | 6/6 pass | 6/6 pass |
+| editor canvas (frame 351px / 788px) | 6/6 pass | 6/6 pass |
+
+Worst cases fixed: I'll Be Missing You 1100px→0 overflowing elements; NEURAL SYNTH
+`div.track` 395px→0; TAMAGOTCHI `div.hero-content` 362px→0 in the editor frame.
+
+**Desktop no-op, proven not asserted:** element-by-element geometry diff at 1280px
+across all six pages, guard off vs on — **0 of 380 elements moved.**
+
+## Deviations from the brief, and why
+
+1. **Corrective breakpoint is 820px, not 600px.** The editor canvas is a ~788px frame
+   and media queries inside an iframe evaluate against the frame, not the device. At
+   600px the reference page was still laying out at 1100px inside a 788px frame and
+   merely being clipped. Caught only because the metric was changed from `scrollWidth`
+   to element width. The phone-only extras stay at 600px.
+2. **`box-sizing:border-box` is phone-only.** Applied globally it moved desktop layout
+   on three of six pages (Silicon Singles −48px, NEURAL SYNTH −40px, LANDSCAPE CANVAS
+   −1px): those pages assume content-box, and border-box absorbs padding and borders.
+3. **No blanket display-type clamp.** A mobile `font-size` override on `h1`/`h2` would
+   visibly resize headings on the pages that already render correctly, which is most of
+   them, and CSS cannot express "only if oversized". Handled at the source instead: the
+   SYSTEM_PROMPT requires `clamp()` with a floor that fits 360px. Existing pages get
+   `overflow-wrap:anywhere` so long headlines break rather than overflow.
+4. **`flex-basis:auto` added at ≤600px.** Not in the brief and required. `min-width:0`
+   alone let five `flex:1` timeline entries squeeze to ~70px each with overlapping
+   labels — every width check passed while the page was unreadable. Found by looking at
+   a screenshot, not by a metric.
+5. **No host/container change.** The brief anticipated an iOS iframe auto-expand fix.
+   Measurement says the frame is already constrained correctly (351px at 375px, outer
+   page overflow 0), so no container change was made.
+6. **SYSTEM_PROMPT edited in code.** There is no MongoDB-driven prompt config; the
+   `settings` collection holds only `aiWaterfall`.
+
+## Not done
+
+Not deployed. Branch pushed for a Vercel **preview** only.
+`/p/<slug>` end-to-end (as opposed to `/raw` + editor canvas, both verified) needs the
+preview URL, since the guard runs server-side in `prepareDocument`.

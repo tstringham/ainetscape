@@ -13,6 +13,7 @@
 import { getCallerIp, rateLimit } from '../../_shared.js';
 import { renderChrome, escapeAttr } from '../../_chrome.js';
 import { buildDescription } from '../../_indexable.js';
+import { injectResponsiveGuard } from '../../_responsive_guard.js';
 
 const VALID_SLUG = /^[A-Za-z0-9]{6,20}$/;
 
@@ -312,7 +313,9 @@ export function prepareDocument(html, slug) {
    * onclick for calculators and toggles that are real content -- those stay.
    */
   out = out.replace(/(<form\b[^>]*?)\son(?:submit|reset)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
-  const head = '<style>img,svg,video,canvas{max-width:100%!important;height:auto;}</style>' + LOC_STUB;
+  // The media rule that used to live here moved into _responsive_guard.js,
+  // verbatim, so it now arrives as part of one baseline instead of two.
+  const head = LOC_STUB;
   if (/<head[^>]*>/i.test(out)) out = out.replace(/<head[^>]*>/i, (m) => m + head);
   else if (/<html[^>]*>/i.test(out)) out = out.replace(/<html[^>]*>/i, (m) => m + head);
   else out = head + out;
@@ -328,6 +331,12 @@ export function prepareDocument(html, slug) {
     else if (/<\/html>/i.test(out)) out = out.replace(/<\/html>/i, () => LEGIBLE_FIELDS + '</html>');
     else out = out + LEGIBLE_FIELDS;
   }
+  // LAST, so the guard lands FIRST inside <head>. Everything here inserts at
+  // the same position, so the final writer ends up earliest — and the guard
+  // has to precede the author's CSS for the author to keep winning on equal
+  // specificity. Serve-time, so every page already published is covered
+  // without regenerating anything.
+  out = injectResponsiveGuard(out);
   return out;
 }
 
