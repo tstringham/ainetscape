@@ -909,3 +909,61 @@ export async function submissionHealth() {
   return { total, undelivered, oldestUndelivered: oldest ? oldest.ts : null,
            lastError: oldest ? oldest.delivery_error : null };
 }
+
+// ============================================================
+// Operational snapshot for the hourly launch report (api/cron/ops-report.js).
+//
+// Read-only except for one bookkeeping write: the homepage visit count has no
+// per-visit timestamp, so "visits since the last report" can only be produced
+// by remembering the previous reading. That is stored on settings.opsReport.
+// ============================================================
+export async function opsSnapshot() {
+  const d = await getDb();
+  const g = d.collection('generations');
+  const now = Date.now();
+  const hourAgo = new Date(now - 3600e3);
+  const dayAgo = new Date(now - 24 * 3600e3);
+  const completed = { event: 'ai_generation_completed' };
+
+  const [genHour, gen24, genTotal, events, models, tok, site, prev, eng] = await Promise.all([
+    g.countDocuments({ ...completed, ts: { $gte: hourAgo } }),
+    g.countDocuments({ ...completed, ts: { $gte: dayAgo } }),
+    g.countDocuments(completed),
+    g.aggregate([{ $match: { ts: { $gte: dayAgo } } },
+                 { $group: { _id: '$event', n: { $sum: 1 } } }]).toArray(),
+    g.aggregate([{ $match: { ...completed, ts: { $gte: dayAgo } } },
+                 { $group: { _id: '$model', n: { $sum: 1 } } }, { $sort: { n: -1 } }]).toArray(),
+    g.aggregate([{ $match: { ...completed, ts: { $gte: dayAgo } } },
+                 { $group: { _id: null, inp: { $sum: '$input_tokens' },
+                             out: { $sum: '$output_tokens' }, dur: { $avg: '$duration_ms' } } }]).toArray(),
+    d.collection('siteStats').findOne({ _id: 'homepage' }),
+    d.collection('settings').findOne({ _id: 'opsReport' }),
+    g.aggregate([{ $match: { source: 'ai', event: 'ai_generation_completed', is_public: { $ne: false } } },
+                 { $group: { _id: null, hits: { $sum: '$hits' }, votes: { $sum: '$upvotes' } } }]).toArray()
+  ]);
+
+  const visits = site ? site.count : null;
+  const visitsDelta = (prev && typeof prev.lastVisits === 'number' && visits != null)
+    ? visits - prev.lastVisits : null;
+  await d.collection('settings').updateOne(
+    { _id: 'opsReport' },
+    { $set: { lastVisits: visits, lastRun: new Date() } },
+    { upsert: true }
+  );
+
+  let undelivered = null;
+  try { undelivered = await d.collection('submissions').countDocuments({ delivered: false }); } catch (_) {}
+
+  return {
+    genHour, gen24, genTotal,
+    events: Object.fromEntries(events.map(e => [e._id || 'unknown', e.n])),
+    models: Object.fromEntries(models.map(m => [m._id || 'unknown', m.n])),
+    tokensIn: tok[0] ? (tok[0].inp || 0) : 0,
+    tokensOut: tok[0] ? (tok[0].out || 0) : 0,
+    avgMs: tok[0] ? Math.round(tok[0].dur || 0) : 0,
+    visits, visitsDelta,
+    hits: eng[0] ? eng[0].hits : 0,
+    votes: eng[0] ? eng[0].votes : 0,
+    undelivered
+  };
+}

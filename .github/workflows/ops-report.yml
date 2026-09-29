@@ -1,0 +1,59 @@
+# Hourly activity + spend report during the launch window.
+#
+# WHY IT LIVES HERE AND NOT IN vercel.json. Vercel's Hobby plan allows two
+# cron jobs and both are already spoken for — site-of-the-week and thumbnails.
+# A third would silently not be scheduled. Actions minutes are free and
+# unlimited on a public repository, and this repo is public, so the schedule
+# costs nothing and the endpoint does all the real work.
+#
+# WHY IT IS SAFE TO FORGET. The endpoint refuses to send after
+# OPS_REPORT_UNTIL, so when the launch window closes this workflow keeps
+# firing into a no-op until someone deletes it. Leaving it costs a few seconds
+# of CI an hour and sends nobody anything.
+#
+# Required:
+#   GitHub  -> Settings -> Secrets -> Actions:  CRON_SECRET
+#   Vercel  -> Environment Variables (Production):
+#              OPS_ALERT_EMAIL   the operator's inbox (NEVER committed —
+#                                this repo is public)
+#              OPS_REPORT_UNTIL  ISO timestamp; reports stop after it
+
+name: ops-report
+
+on:
+  schedule:
+    # Top of every hour. GitHub runs schedules best-effort and slips under
+    # load, so treat this as "roughly hourly", not a guarantee. For a status
+    # email that is entirely fine.
+    - cron: '0 * * * *'
+  # So the first one can be sent immediately rather than waiting for the hour.
+  workflow_dispatch:
+
+concurrency:
+  group: ops-report
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request report
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET is not set as an Actions secret — nothing to do."
+            exit 0
+          fi
+          # -sS so a failure is loud but a success is quiet. The endpoint
+          # always answers 200 with a JSON reason, including when it declines
+          # to send, so the log is the record of what happened and why.
+          body=$(curl -sS --max-time 60 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            https://ainetscape.com/api/cron/ops-report)
+          echo "$body"
+          # A refusal to send is a valid outcome (window closed, env unset).
+          # Only a hard failure should fail the job.
+          echo "$body" | grep -q '"ok":true' || {
+            echo "::warning::ops-report did not complete cleanly"; exit 0; }
