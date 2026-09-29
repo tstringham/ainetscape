@@ -1264,6 +1264,7 @@
           <!-- <li><font size="3">Applying to <a href="https://a16z.com">Andreessen Horowitz</a></font></li> -->
           <li><font size="3">My cat, Simba</font></li>
         </ul>
+        <p><font size="3"><a href="/gallery">See what others have done with the AI Composer</a></font></p>
         <hr>
         <center>
           <p><font size="2"><i id="last-updated">Last updated: May 22, 1997</i></font></p>
@@ -4315,6 +4316,10 @@ editor.addEventListener('click', (e) => {
   } else if (/^https?:\/\//i.test(href)) {
     e.preventDefault();
     window.open(href, '_blank', 'noopener,noreferrer');
+  } else if (/^\/(?!\/)/.test(href)) {
+    // Same-site path (e.g. /gallery): navigate in place.
+    e.preventDefault();
+    window.location.href = href;
   }
 });
 

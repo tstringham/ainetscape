@@ -88,6 +88,16 @@ html,body{overflow-x:hidden;}
      was unreadable. flex-basis:auto restores content-sizing; flex-wrap above
      then does the actual wrapping. Rows that still fit are left alone. */
   *{flex-basis:auto!important;}
+  /* Grids collapse to one column.
+     This is the grid counterpart of min-width, and nothing above catches it:
+     a track sized minmax(320px,1fr) has a 320px FLOOR, so auto-fit collapsing
+     to a single column still cannot fit 320px into ~255px of available space.
+     min-width:0 does not apply to track sizing and max-width on the item
+     cannot shrink the track. Silicon Singles overflowed by 17px this way with
+     every other rule in this file already active.
+     Like flex-wrap, grid-template-columns is inert on anything that is not a
+     grid container, so applying it broadly is safe. */
+  *{grid-template-columns:1fr!important;}
   /* Display type breaks rather than overflows. Deliberately NOT a blanket
      font-size override: resizing every heading would visibly change the pages
      that already render correctly, which is most of them. Oversized type is
