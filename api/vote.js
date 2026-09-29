@@ -7,7 +7,7 @@
 // generation budget. Only votes on public AI pages succeed — a slug that
 // doesn't match a votable row returns 404.
 
-import { getCallerIp, parseBody, rateLimit, rateLimitMessage, recordVote } from './_shared.js';
+import { getCallerIp, parseBody, rateLimit, rateLimitMessage, recordVote, adminTokenValid } from './_shared.js';
 
 const VALID_SLUG = /^[A-Za-z0-9]{6,20}$/;
 
@@ -27,6 +27,19 @@ export default async function handler(req, res) {
 
   const ip = getCallerIp(req);
 
+  // Operator bypass: unlimited votes.
+  //
+  // Seeding social proof. Nobody upvotes an empty gallery, and the site
+  // already fakes its opening numbers on purpose — HOMEPAGE_SEED is 1042
+  // because period sites all did. This is the same decision with a button
+  // instead of a hand-written Mongo update, which is both safer and leaves a
+  // trail in the function log.
+  //
+  // Same gate as everywhere else: a constant-time compare against
+  // ADMIN_EDIT_TOKEN that returns false when the env var is unset, so a
+  // misconfigured deploy cannot hand this to a stranger.
+  const isAdmin = adminTokenValid(req);
+
   // Separate bucket from gen/page so vote bursts can't drain the
   // generation budget. Per-IP burst loose enough to allow a quick scroll
   // through the gallery + tap a few cards without hitting the limit.
@@ -45,7 +58,8 @@ export default async function handler(req, res) {
   const rl = await rateLimit(ip, 'vote', {
     perMin: 20, ipPerHour: 120, ipPerDay: 400,
     perHour: 1_000_000_000_000,
-    skipGlobal: true
+    skipGlobal: true,
+    skipPerIp: isAdmin
   });
   if (!rl.allowed) {
     res.setHeader('Retry-After', String(rl.retryAfter));
@@ -53,7 +67,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const fresh = await recordVote(ip, slug);
+    // The operator skips the one-vote-per-IP-per-slug dedupe entirely, which
+    // is the part that actually limits repeat votes — the rate caps only pace
+    // them. Everyone else is unchanged.
+    const fresh = isAdmin ? true : await recordVote(ip, slug);
     const { incrementUpvote, getUpvoteCount } = await import('./_db.js');
 
     if (!fresh) {
@@ -68,7 +85,10 @@ export default async function handler(req, res) {
       // the client can show a polite error rather than a misleading count.
       return res.status(404).json({ error: 'That page is not in the gallery.' });
     }
-    return res.status(200).json({ ok: true, upvotes: next, already_voted: false });
+    // operator: true tells the client to leave the button live so votes can
+    // be stacked. No secret is echoed — only whether the bypass applied.
+    if (isAdmin) res.setHeader('x-admin-bypass', '1');
+    return res.status(200).json({ ok: true, upvotes: next, already_voted: false, operator: isAdmin || undefined });
   } catch (err) {
     console.error('Vote failed:', err && (err.stack || err.message || err));
     return res.status(500).json({ error: 'The vote could not be recorded.' });
