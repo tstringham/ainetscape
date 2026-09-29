@@ -1,68 +1,78 @@
 #!/usr/bin/env python3
-"""Build the AI Netscape favicons: a pixel-art "N", white on teal.
+"""Build the AI Netscape favicons from the flaming "N" mark.
 
 Generates, into public/:
-  favicon.ico         16x16 + 32x32, pixel-perfect
-  favicon.svg         crisp vector version for modern browsers
+  favicon.ico          16 + 32 + 48, multi-size
+  favicon.svg          the raster wrapped in SVG, so the existing
+                       <link rel="icon" type="image/svg+xml"> keeps working
   apple-touch-icon.png 180x180
+
+Source: scripts/assets/flaming_n.png (512x512, committed so the build is
+reproducible without reaching outside the repo).
+
+This replaced a procedurally drawn white-on-teal pixel N. The mark survives
+being shrunk because the letterform is near-white against a dark ground —
+checked at 16px before switching, where it is still legibly an N rather than
+an orange smudge. A logo that is orange-on-orange would not have made it.
 
 Run from the project root:  python3 scripts/build_favicons.py
 Requires: Pillow  (pip install pillow)
 """
 
+import base64
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 PUBLIC = ROOT / "public"
+SOURCE = ROOT / "scripts" / "assets" / "flaming_n.png"
 PUBLIC.mkdir(exist_ok=True)
 
-TEAL = "#008080"
-WHITE = "#ffffff"
+ICO_SIZES = (16, 32, 48)
+APPLE_SIZE = 180
+SVG_EMBED_SIZE = 128   # keeps favicon.svg small; it is only ever drawn tiny
 
 
-def render_n(size):
-    """Draw a chunky pixel "N" — left bar, diagonal, right bar."""
-    img = Image.new("RGB", (size, size), TEAL)
-    d = ImageDraw.Draw(img)
-    s = size / 32.0
-
-    def rect(x0, y0, x1, y1):
-        d.rectangle([round(x0 * s), round(y0 * s), round(x1 * s), round(y1 * s)], fill=WHITE)
-
-    rect(8, 8, 11, 24)    # left vertical bar
-    rect(21, 8, 24, 24)   # right vertical bar
-    for i in range(13):   # diagonal, as a staircase of small squares
-        x = 10 + i
-        y = 9 + i * 1.1
-        rect(x, y, x + 2, y + 2)
-    return img
+def load():
+    if not SOURCE.exists():
+        raise SystemExit(f"missing source image: {SOURCE}")
+    return Image.open(SOURCE).convert("RGB")
 
 
 def main():
-    # ICO with both 16x16 and 32x32 entries
-    master = render_n(32)
+    src = load()
+
+    # ICO carrying all three sizes. Pillow resamples each entry from the
+    # master rather than scaling one entry, which keeps 16px from smearing.
     ico_path = PUBLIC / "favicon.ico"
-    master.save(ico_path, format="ICO", sizes=[(16, 16), (32, 32)])
-    print(f"wrote {ico_path}")
-
-    # Apple touch icon
-    touch_path = PUBLIC / "apple-touch-icon.png"
-    render_n(180).save(touch_path, format="PNG")
-    print(f"wrote {touch_path}")
-
-    # SVG version (crisp at any size)
-    svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">\n'
-        '  <rect width="32" height="32" fill="#008080"/>\n'
-        '  <rect x="8" y="8" width="3" height="16" fill="#ffffff"/>\n'
-        '  <rect x="21" y="8" width="3" height="16" fill="#ffffff"/>\n'
-        '  <path d="M10 9 L23 24" stroke="#ffffff" stroke-width="3" fill="none"/>\n'
-        '</svg>\n'
+    src.resize((48, 48), Image.LANCZOS).save(
+        ico_path, format="ICO", sizes=[(s, s) for s in ICO_SIZES]
     )
-    svg_path = PUBLIC / "favicon.svg"
-    svg_path.write_text(svg, encoding="utf-8")
-    print(f"wrote {svg_path}")
+
+    # Apple touch icon. No transparency and a dark ground, which is what iOS
+    # wants — it composites onto the home screen without a matte.
+    apple = src.resize((APPLE_SIZE, APPLE_SIZE), Image.LANCZOS)
+    apple.save(PUBLIC / "apple-touch-icon.png", optimize=True)
+
+    # The old favicon.svg was real vector art. This mark is raster, so the SVG
+    # becomes a wrapper around an embedded PNG. Slightly inelegant, but it
+    # means every <link rel="icon" type="image/svg+xml"> across the site keeps
+    # resolving and no HTML has to change.
+    tmp = PUBLIC / "_favicon_embed.png"
+    src.resize((SVG_EMBED_SIZE, SVG_EMBED_SIZE), Image.LANCZOS).save(tmp, optimize=True)
+    b64 = base64.b64encode(tmp.read_bytes()).decode("ascii")
+    tmp.unlink()
+    (PUBLIC / "favicon.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        f'width="{SVG_EMBED_SIZE}" height="{SVG_EMBED_SIZE}" '
+        f'viewBox="0 0 {SVG_EMBED_SIZE} {SVG_EMBED_SIZE}">'
+        f'<image width="{SVG_EMBED_SIZE}" height="{SVG_EMBED_SIZE}" '
+        f'href="data:image/png;base64,{b64}"/></svg>',
+        encoding="utf-8",
+    )
+
+    for p in ("favicon.ico", "favicon.svg", "apple-touch-icon.png"):
+        print(f"  wrote public/{p}  ({(PUBLIC / p).stat().st_size} bytes)")
 
 
 if __name__ == "__main__":
