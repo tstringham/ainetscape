@@ -72,10 +72,30 @@ async function shoot(slug) {
   });
   try {
     const page = await browser.newPage();
-    await page.goto(ORIGIN + '/p/' + encodeURIComponent(slug), {
+    const resp = await page.goto(ORIGIN + '/p/' + encodeURIComponent(slug), {
       waitUntil: 'networkidle0',
       timeout: NAV_TIMEOUT_MS
     });
+
+    // Refuse to photograph anything that is not the page.
+    //
+    // A render that "succeeds" on a 404 is worse than one that fails: it
+    // stores a picture of an error page, and because renderThumbnail() skips
+    // slugs that already have a thumbnail, that picture is permanent. Three
+    // gallery cards showed "404 — Page Not Found" this way, captured by the
+    // cron while the generation was still in flight.
+    //
+    // The candidate filter in listSlugsMissingThumbnails now prevents that
+    // specific race, but this is the check that makes the whole class
+    // impossible — a page taken down mid-render, a bad deploy, a slug that
+    // 404s for any reason at all. Returning null means the caller falls back
+    // and the slug stays a candidate, so it gets another chance later. An
+    // empty gallery card is recoverable; a wrong one is not.
+    const status = resp ? resp.status() : 0;
+    if (!resp || status >= 400) {
+      console.error('[thumb] ' + slug + ' served HTTP ' + status + ' — refusing to store a capture of it');
+      return null;
+    }
     // Deliberately not page.waitForTimeout: removed in puppeteer 22.
     await new Promise((r) => setTimeout(r, SETTLE_MS));
     return await page.screenshot({
