@@ -50,6 +50,7 @@ import { runWaterfall, resolveRunnableWaterfall, DEFAULT_WATERFALL } from './_ai
 // generated HTML's structural skeleton (image URLs / dates / counters stripped)
 // so true structural dupes can be detected and re-rolled at publish.
 import { contentHash as computeContentHash } from './_dedup.js';
+import { cleanTitle } from './_title.js';
 import { injectResponsiveGuard } from './_responsive_guard.js';
 
 // Provider waterfall timing. Each rung is buffered (not streamed) so we can
@@ -493,10 +494,17 @@ export default async function handler(req, res) {
     };
 
     // Pull the <title> out of the generated HTML for the gallery card display.
+    //
+    // This regex lifts the element's SOURCE, not its rendered value, so a
+    // model-written `&amp;` arrives encoded. Everything downstream treats
+    // page_title as plain text and escapes it again on output, which is how
+    // "BEAD &amp; BONE" reached a gallery card verbatim. cleanTitle decodes
+    // once and strips any markup, so what is stored is what a browser would
+    // have shown in the tab.
     let pageTitle = null;
     if (event === 'ai_generation_completed') {
       const m = /<title>([\s\S]*?)<\/title>/i.exec(finalBody || '');
-      if (m) pageTitle = m[1].trim().slice(0, 200);
+      if (m) pageTitle = cleanTitle(m[1]) || null;
     }
 
     // ---- Stage 2 of the two-stage write ----

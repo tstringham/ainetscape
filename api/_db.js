@@ -8,6 +8,7 @@
 
 import { MongoClient } from 'mongodb';
 import crypto from 'crypto';
+import { cleanTitle } from './_title.js';
 
 let client;
 let db;
@@ -262,7 +263,7 @@ export async function completePageRow({
     setFields.body_html = String(body_html);
     setFields.body_size_bytes = setFields.body_html.length;
   }
-  if (page_title) setFields.page_title = String(page_title).slice(0, 200);
+  if (page_title) setFields.page_title = cleanTitle(page_title);
   if (contentHash) setFields.contentHash = String(contentHash);
   if (data && data.model) setFields.model = data.model;
   if (data && data.usage) {
@@ -287,7 +288,7 @@ export async function updatePageBody({ slug, body_html, page_title }) {
     body_size_bytes: String(body_html).length,
     edited_at: new Date()
   };
-  if (page_title) setFields.page_title = String(page_title).slice(0, 200);
+  if (page_title) setFields.page_title = cleanTitle(page_title);
   const r = await d.collection('generations').updateOne(
     { share_slug: String(slug) },
     { $set: setFields }
@@ -666,7 +667,7 @@ export async function logEvent({
   if (share_slug) doc.share_slug = String(share_slug);
 
   // ---- Gallery fields (Phase 1) ----
-  if (page_title) doc.page_title = String(page_title).slice(0, 200);
+  if (page_title) doc.page_title = cleanTitle(page_title);
   if (author_token_hash) doc.author_token_hash = String(author_token_hash);
   // source discriminates AI generations (gallery-eligible) from a
   // hypothetical future WYSIWYG-save flow (never appears in gallery).
