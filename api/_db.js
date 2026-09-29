@@ -990,3 +990,57 @@ export async function opsSnapshot() {
     undelivered
   };
 }
+
+// ============================================================
+// Premise retirement.
+//
+// Which composer chips a visitor has already used. This lived only in
+// localStorage, which loses it on a cleared cache, a private window, a
+// different browser, or a different origin — so a premise you dispatched
+// yesterday could be offered back to you today looking like a bug.
+//
+// Keyed by the same salted IP hash votes and hits use: durable, anonymous, and
+// no account needed. Deliberately NOT global — retiring a premise for everyone
+// the first time anyone used it would consume the 117-premise catalogue in
+// about two days at launch traffic and leave later visitors with an emptier
+// dialog than earlier ones.
+//
+// Doc: { _id: <ip_hash>, used: [label], updated_at: Date }
+// Expired after 90 days by a TTL index, because a visitor who has not been
+// back in three months has forgotten the catalogue anyway.
+// ============================================================
+const PREMISE_USE_TTL_DAYS = 90;
+const MAX_TRACKED_PREMISES = 400;   // > catalogue size; a cap, not a policy
+
+export async function getUsedPremises(ipHash) {
+  if (!ipHash) return [];
+  const d = await getDb();
+  const doc = await d.collection('premiseUse')
+    .findOne({ _id: String(ipHash) }, { projection: { used: 1, _id: 0 } });
+  return doc && Array.isArray(doc.used) ? doc.used : [];
+}
+
+export async function recordUsedPremise(ipHash, label) {
+  if (!ipHash || !label) return;
+  const d = await getDb();
+  await d.collection('premiseUse').updateOne(
+    { _id: String(ipHash) },
+    {
+      // $addToSet keeps it idempotent — dispatching the same chip twice is
+      // not an error and must not grow the array.
+      $addToSet: { used: { $each: [String(label).slice(0, 120)], $slice: -MAX_TRACKED_PREMISES } },
+      $set: { updated_at: new Date() }
+    },
+    { upsert: true }
+  );
+}
+
+export async function ensurePremiseUseIndexes() {
+  const d = await getDb();
+  try {
+    await d.collection('premiseUse').createIndex(
+      { updated_at: 1 },
+      { expireAfterSeconds: PREMISE_USE_TTL_DAYS * 24 * 60 * 60, name: 'premise_use_ttl_idx' }
+    );
+  } catch (_) { /* already exists */ }
+}

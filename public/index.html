@@ -2813,7 +2813,44 @@ function loadUsedPremises() {
   } catch (e) { return new Set(); }
 }
 
+// Tell the server, so retirement survives this browser.
+//
+// localStorage is kept as the INSTANT layer: the dialog paints before any
+// request could return, and a chip must disappear the moment it is tapped.
+// The server copy is what makes it durable across a cleared cache, a private
+// window, or a different browser on the same connection.
+//
+// Fire-and-forget by design. If it fails, the local copy still worked and the
+// visitor notices nothing; the worst case is the old behaviour.
+function recordPremiseUsedRemote(label) {
+  try {
+    fetch('/api/premise-use', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+      keepalive: true            // survives the navigation the generator causes
+    }).catch(() => {});
+  } catch (_) { /* nothing here is worth failing a dispatch over */ }
+}
+
+// Merge whatever the server remembers into the local copy. Union, never
+// replace: a chip tapped seconds ago may not have reached the database yet,
+// and losing that would put it straight back in the rotation.
+function mergeUsedPremisesFromServer(list) {
+  if (!Array.isArray(list) || !list.length) return;
+  try {
+    const used = loadUsedPremises();
+    let added = 0;
+    for (const l of list) if (typeof l === 'string' && !used.has(l)) { used.add(l); added++; }
+    if (!added) return;
+    const remaining = COMPOSER_CONFIG.premises.filter(p => !used.has(p.label)).length;
+    if (remaining < 4) { localStorage.removeItem(USED_PREMISES_KEY); return; }
+    localStorage.setItem(USED_PREMISES_KEY, JSON.stringify([...used]));
+  } catch (_) {}
+}
+
 function markPremiseUsed(label) {
+  recordPremiseUsedRemote(label);
   try {
     const used = loadUsedPremises();
     used.add(label);
@@ -2938,6 +2975,12 @@ function refreshPremisesFromServer() {
         const clean = rows.filter(r =>
           r && r.label && r.premise && r.pillar && (r.pillar in COMPOSER_CONFIG.pillarWeights));
         if (clean.length) COMPOSER_CONFIG.premises = clean;
+        // Catalogue first, then this visitor's retirements against it — the
+        // reset check inside the merge needs the real catalogue size.
+        fetch('/api/premise-use', { cache: 'no-store' })
+          .then(r => (r.ok ? r.json() : null))
+          .then(d => mergeUsedPremisesFromServer(d && d.used))
+          .catch(() => {});
       })
       .catch(() => { /* keep the baked-in list */ });
   } catch (e) { /* keep the baked-in list */ }

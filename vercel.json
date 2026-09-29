@@ -6,40 +6,67 @@
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Permissions-Policy", "value": "geolocation=(), microphone=(), camera=()" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=(), microphone=(), camera=()"
+        }
       ]
     },
     {
       "source": "/og-image.png",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
       ]
     },
     {
       "source": "/favicon.ico",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=86400" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
       ]
     },
     {
       "source": "/favicon.svg",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=86400" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
       ]
     },
     {
       "source": "/apple-touch-icon.png",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=86400" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
       ]
     },
     {
       "source": "/spell/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=2592000, immutable" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=2592000, immutable"
+        }
       ]
     }
   ],
@@ -90,16 +117,37 @@
     },
     "api/premises.js": {
       "maxDuration": 10
+    },
+    "api/premise-use.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [
-    { "source": "/p/:slug/raw", "destination": "/api/page/:slug/raw" },
-    { "source": "/p/:slug", "destination": "/api/page/:slug" },
-    { "source": "/gallery", "destination": "/api/gallery" },
-    { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" }
+    {
+      "source": "/p/:slug/raw",
+      "destination": "/api/page/:slug/raw"
+    },
+    {
+      "source": "/p/:slug",
+      "destination": "/api/page/:slug"
+    },
+    {
+      "source": "/gallery",
+      "destination": "/api/gallery"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap.xml"
+    }
   ],
   "crons": [
-    { "path": "/api/cron/site-of-the-week", "schedule": "0 0 * * 1" },
-    { "path": "/api/cron/thumbnails", "schedule": "*/5 * * * *" }
+    {
+      "path": "/api/cron/site-of-the-week",
+      "schedule": "0 0 * * 1"
+    },
+    {
+      "path": "/api/cron/thumbnails",
+      "schedule": "*/5 * * * *"
+    }
   ]
 }
