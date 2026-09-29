@@ -165,7 +165,8 @@ function renderSiteOfTheWeek(p) {
   const hits = formatCount(p.hits);
   const date = formatGalleryDate(p.ts);
   const href = '/p/' + slug;
-  const thumb = thumbnailUrl(slug);
+  // Render time doubles as the cache-busting version — see thumbnailUrl().
+  const thumb = thumbnailUrl(slug, p.thumbnail_at ? +new Date(p.thumbnail_at) : 0);
 
   return '<div class="sotw-box">' +
     '<div class="sotw-header">&#9733; SITE OF THE WEEK</div>' +
@@ -232,7 +233,8 @@ function renderCard(p) {
   const hits = formatCount(p.hits);
   const date = formatGalleryDate(p.ts);
   const href = '/p/' + slug;
-  const thumb = thumbnailUrl(slug);
+  // Render time doubles as the cache-busting version — see thumbnailUrl().
+  const thumb = thumbnailUrl(slug, p.thumbnail_at ? +new Date(p.thumbnail_at) : 0);
 
   // Only the thumbnail and the title are links to /p/:slug. Everything
   // else in .gallery-stats is plain text. The upvote button POSTs to
@@ -303,7 +305,7 @@ function staticThumbUrl(slug) {
   return '/images/gallery/' + encodeURIComponent(slug) + '.png';
 }
 
-function thumbnailUrl(slug) {
+function thumbnailUrl(slug, v) {
   // Our own endpoint, our own bytes. This was api.microlink.io -- a
   // third-party screenshot proxy on a free daily quota, called fresh on every
   // card render. On 20 September the quota ran out and every thumbnail in the
@@ -313,7 +315,20 @@ function thumbnailUrl(slug) {
   // /api/thumb serves a stored PNG when one exists and a drawn placeholder
   // when it does not, so this never 404s and the onerror path below is now
   // only about genuine transport failure.
-  return '/api/thumb/' + encodeURIComponent(slug);
+  // Versioned by render time.
+  //
+  // /api/thumb answers `immutable, max-age=31536000`, which promises the bytes
+  // at this URL never change. They do — every re-render replaces them. Three
+  // cards were re-rendered from 404 captures into real pages and the edge kept
+  // serving the old image regardless, because it had been told it never had to
+  // ask again. The header was not wrong to be aggressive; the URL was wrong to
+  // be constant.
+  //
+  // Adding the render timestamp makes the promise true: new picture, new URL,
+  // and the year-long cache is kept rather than weakened. Callers without a
+  // timestamp (a page whose thumbnail has not rendered yet) get the bare URL,
+  // which serves the short-lived placeholder.
+  return '/api/thumb/' + encodeURIComponent(slug) + (v ? '?v=' + v : '');
 }
 
 function serviceUnavailableHtml() {

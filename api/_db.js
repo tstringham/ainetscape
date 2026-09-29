@@ -116,7 +116,10 @@ const GALLERY_FILTER = {
   body_html:  { $exists: true, $nin: [null, ''] }
 };
 const GALLERY_PROJECTION = {
-  share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, _id: 0
+  // thumbnail_at rides along so a card can version its <img> URL. /api/thumb
+  // is served immutable, which is only honest if the URL changes when the
+  // picture does — see thumbUrl() in gallery.js.
+  share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, thumbnail_at: 1, _id: 0
 };
 
 // Three sort modes: 'recent' (latest first), 'week' (last 7 days by upvotes),
@@ -184,7 +187,7 @@ export async function listGalleryRowsAdmin({ hidden = false, skip = 0, limit = 5
     body_html: { $exists: true, $nin: [null, ''] }
   };
   return d.collection('generations')
-    .find(filter, { projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, is_public: 1, _id: 0 } })
+    .find(filter, { projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, thumbnail_at: 1, is_public: 1, _id: 0 } })
     .sort({ ts: -1 })
     .skip(Math.max(0, skip))
     .limit(Math.max(1, Math.min(200, limit)))
@@ -321,7 +324,7 @@ export async function findSiteOfTheWeekCandidate() {
     },
     {
       sort: { upvotes: -1, ts: -1 },
-      projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, _id: 0 }
+      projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, thumbnail_at: 1, _id: 0 }
     }
   );
 }
@@ -361,7 +364,7 @@ export async function findCurrentSiteOfTheWeek() {
     },
     {
       projection: {
-        share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1,
+        share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, thumbnail_at: 1,
         site_of_the_week: 1, _id: 0
       }
     }
@@ -782,6 +785,23 @@ export async function recordThumbError(slug, message) {
   );
 }
 
+// Slugs that are ready to be photographed and have no photograph yet.
+//
+// "READY" IS THE LOAD-BEARING WORD. This used to select on source, is_public
+// and share_slug alone, which a PLACEHOLDER row satisfies the instant stage one
+// of the two-stage write lands — before body_html exists. The five-minute cron
+// would pick up a generation still in flight, load /p/<slug>, receive an
+// entirely correct 404 because the body was not written yet, and photograph
+// the 404 page.
+//
+// It then became permanent: renderThumbnail() skips any slug that already has
+// a thumbnail, so when the generation finished and the publish path tried to
+// render the real one, it found the 404 capture and declined. Three pages
+// carried a picture of "404 — Page Not Found" as their gallery card.
+//
+// So the filter now requires a COMPLETED row with a non-empty body — the same
+// conditions api/page/[slug] requires before it will serve the page at all.
+// If /p/<slug> would 404, the slug is not a candidate.
 export async function listSlugsMissingThumbnails(limit = 500) {
   const d = await getDb();
   const have = await d.collection('thumbnails').distinct('_id');
@@ -789,6 +809,8 @@ export async function listSlugsMissingThumbnails(limit = 500) {
     .find(
       {
         source: 'ai',
+        event: 'ai_generation_completed',
+        body_html: { $exists: true, $nin: [null, ''] },
         is_public: { $ne: false },
         share_slug: { $exists: true, $nin: have }
       },

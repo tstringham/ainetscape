@@ -134,6 +134,11 @@ export function decorate(html, slug, doc) {
   const hasRender = !!(doc && doc.thumbnail_at);
   const ogImageUrl = hasRender
     ? 'https://ainetscape.com/api/thumb/' + encodeURIComponent(slug)
+      // Versioned for the same reason the gallery cards are: /api/thumb is
+      // served immutable, so a re-rendered thumbnail never reaches anyone
+      // holding the old URL — including Twitter and Slack, which cache
+      // og:image hard.
+      + (doc && doc.thumbnail_at ? '?v=' + (+new Date(doc.thumbnail_at)) : '')
     : 'https://ainetscape.com/og-image.png';
   const safeImg = escapeAttr(ogImageUrl);
   // The two images are not the same shape and the tags have to say so. The
