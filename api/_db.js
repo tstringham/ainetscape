@@ -116,7 +116,10 @@ const GALLERY_FILTER = {
   body_html:  { $exists: true, $nin: [null, ''] }
 };
 const GALLERY_PROJECTION = {
-  share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, _id: 0
+  // thumbnail_at rides along so a card can version its <img> URL. /api/thumb
+  // is served immutable, which is only honest if the URL changes when the
+  // picture does — see thumbUrl() in gallery.js.
+  share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, thumbnail_at: 1, _id: 0
 };
 
 // Three sort modes: 'recent' (latest first), 'week' (last 7 days by upvotes),
@@ -184,7 +187,7 @@ export async function listGalleryRowsAdmin({ hidden = false, skip = 0, limit = 5
     body_html: { $exists: true, $nin: [null, ''] }
   };
   return d.collection('generations')
-    .find(filter, { projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, is_public: 1, _id: 0 } })
+    .find(filter, { projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, thumbnail_at: 1, is_public: 1, _id: 0 } })
     .sort({ ts: -1 })
     .skip(Math.max(0, skip))
     .limit(Math.max(1, Math.min(200, limit)))
@@ -321,7 +324,7 @@ export async function findSiteOfTheWeekCandidate() {
     },
     {
       sort: { upvotes: -1, ts: -1 },
-      projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, _id: 0 }
+      projection: { share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, thumbnail_at: 1, _id: 0 }
     }
   );
 }
@@ -361,7 +364,7 @@ export async function findCurrentSiteOfTheWeek() {
     },
     {
       projection: {
-        share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1,
+        share_slug: 1, page_title: 1, upvotes: 1, hits: 1, ts: 1, thumbnail_at: 1,
         site_of_the_week: 1, _id: 0
       }
     }
