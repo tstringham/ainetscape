@@ -378,6 +378,33 @@ export function renderChrome({ title, content, statusText = 'Document: Done', he
     /* Active sits "in front of" neighbors so its sunken bevel reads clean. */
     position: relative; z-index: 1;
   }
+  /* Secondary metric toggle. Deliberately quieter than the window tabs
+     above it: plain underlined links rather than a second bevelled segment
+     bar, so the page still has one obvious primary control. */
+  .gallery-rank {
+    display: flex; justify-content: center; align-items: baseline;
+    gap: 7px;
+    margin: -8px 0 18px;
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+    font-size: 10pt;
+    color: #333;
+  }
+  .gallery-rank-label { color: #555; }
+  .gallery-rank-sep { color: #999; }
+  .gallery-rank-btn {
+    color: #0000cc;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .gallery-rank-btn:hover { background: var(--face-lt); }
+  .gallery-rank-btn:focus-visible { outline: 1px dotted #000; outline-offset: 1px; }
+  .gallery-rank-btn.active {
+    color: #000;
+    font-weight: bold;
+    text-decoration: none;
+    cursor: default;
+  }
+
   /* ---- Card grid: tighter density (1997 directory) ---- */
   .gallery-grid {
     display: grid;

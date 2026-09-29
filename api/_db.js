@@ -37,6 +37,13 @@ async function getDb() {
       { source: 1, event: 1, is_public: 1, upvotes: -1, ts: -1 },
       { name: 'gallery_upvotes_idx' }
     );
+    // Third gallery sort: rank by hits instead of cool votes. Without this
+    // the hits ranking would be a collection scan plus an in-memory sort on
+    // every gallery render, and /gallery is no-store so every render is real.
+    await db.collection('generations').createIndex(
+      { source: 1, event: 1, is_public: 1, hits: -1, ts: -1 },
+      { name: 'gallery_hits_idx' }
+    );
     // Site-of-the-week lookup hits this every gallery render. Sparse so
     // it only indexes the (typically 0 or 1) currently-set rows.
     await db.collection('generations').createIndex(
@@ -115,28 +122,38 @@ const GALLERY_PROJECTION = {
 // Three sort modes: 'recent' (latest first), 'week' (last 7 days by upvotes),
 // 'all' (lifetime by upvotes). Legacy 'upvotes' is treated as an alias for
 // 'all' so old shared URLs (?sort=upvotes) keep resolving.
-function galleryQueryFor(sort) {
-  const upvoteSort = { upvotes: -1, ts: -1 };
+// `sort` picks the WINDOW (everything / the last 7 days / newest first) and
+// `by` picks the METRIC the two "best" windows rank on. They are separate so
+// the two compose: this week by hits, all time by hits, and so on, without a
+// tab per combination.
+//
+// `by` is ignored for 'recent', which is chronological and has nothing to
+// rank. ts is the tiebreaker in every ranked spec so pagination is stable —
+// without it, pages with equal votes could reshuffle between page 1 and 2 and
+// a card could appear twice or not at all.
+function galleryQueryFor(sort, by) {
+  const metric = String(by || '').toLowerCase() === 'hits' ? 'hits' : 'upvotes';
+  const rankSort = metric === 'hits' ? { hits: -1, ts: -1 } : { upvotes: -1, ts: -1 };
   switch (String(sort || '').toLowerCase()) {
     case 'week': {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       return {
         filter: { ...GALLERY_FILTER, ts: { $gte: sevenDaysAgo } },
-        sortSpec: upvoteSort
+        sortSpec: rankSort
       };
     }
     case 'all':
     case 'upvotes':
-      return { filter: GALLERY_FILTER, sortSpec: upvoteSort };
+      return { filter: GALLERY_FILTER, sortSpec: rankSort };
     case 'recent':
     default:
       return { filter: GALLERY_FILTER, sortSpec: { ts: -1 } };
   }
 }
 
-export async function findGalleryPages({ sort = 'recent', skip = 0, limit = 24 }) {
+export async function findGalleryPages({ sort = 'recent', by = 'upvotes', skip = 0, limit = 24 }) {
   const d = await getDb();
-  const { filter, sortSpec } = galleryQueryFor(sort);
+  const { filter, sortSpec } = galleryQueryFor(sort, by);
   return d.collection('generations')
     .find(filter, { projection: GALLERY_PROJECTION })
     .sort(sortSpec)

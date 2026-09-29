@@ -51,6 +51,12 @@ export default async function handler(req, res) {
   let sort = 'recent';
   if (rawSort === 'week') sort = 'week';
   else if (rawSort === 'all' || rawSort === 'upvotes') sort = 'all';
+
+  // Which metric the ranked windows rank on. Anything unrecognised falls back
+  // to cool votes, and 'recent' ignores it entirely — a chronological list has
+  // nothing to rank.
+  const by = (String(req.query.by || '').toLowerCase() === 'hits' && sort !== 'recent')
+    ? 'hits' : 'upvotes';
   let page = parseInt(req.query.page, 10);
   if (!Number.isFinite(page) || page < 1) page = 1;
   page = Math.min(page, 10000);     // sanity cap
@@ -60,7 +66,7 @@ export default async function handler(req, res) {
       findGalleryPages, countGalleryPages, findCurrentSiteOfTheWeek
     } = await import('./_db.js');
     const [pages, total, sotw] = await Promise.all([
-      findGalleryPages({ sort, skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
+      findGalleryPages({ sort, by, skip: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
       // countGalleryPages needs the sort too — 'week' has a time filter
       // that changes the total row count for pagination math.
       countGalleryPages(sort),
@@ -72,7 +78,7 @@ export default async function handler(req, res) {
 
     const html = renderChrome({
       title: 'AI Composer Gallery — AI Netscape',
-      content: renderGalleryContent({ pages, page, totalPages, sort, total, sotw }),
+      content: renderGalleryContent({ pages, page, totalPages, sort, by, total, sotw }),
       statusText: 'Document: AI Composer Gallery'
     });
 
@@ -106,7 +112,7 @@ export default async function handler(req, res) {
 // ============================================================
 // Gallery content (grid + sort toggle + pagination)
 // ============================================================
-function renderGalleryContent({ pages, page, totalPages, sort, total, sotw }) {
+function renderGalleryContent({ pages, page, totalPages, sort, by, total, sotw }) {
   // Quiet, period-correct heading: Times Roman ~h2, single deep blue,
   // matching the rest of the chrome's register rather than Geocities
   // rainbow. No heavy rule below — the subtitle separates it from the
@@ -123,10 +129,22 @@ function renderGalleryContent({ pages, page, totalPages, sort, total, sotw }) {
   const sortToggle =
     '<div class="gallery-toolbar">' +
       '<div class="gallery-sort-group" role="tablist" aria-label="Sort gallery">' +
-        renderSortButton('Recent',                 'recent', sort) +
-        renderSortButton('This Week’s Best',   'week',   sort) +
-        renderSortButton('Best of All Time (so far)', 'all',  sort) +
+        renderSortButton('Recent',                 'recent', sort, by) +
+        renderSortButton('This Week’s Best',   'week',   sort, by) +
+        renderSortButton('Best of All Time (so far)', 'all',  sort, by) +
       '</div>' +
+    '</div>';
+
+  // Metric toggle, shown only for the two ranked windows. Recent is
+  // chronological, so offering to re-rank it would be a control that does
+  // nothing. Both labels are the words the site already uses elsewhere: the
+  // upvote button's title is "Cool vote" and the status bar says "Hits".
+  const rankToggle = (sort === 'recent') ? '' :
+    '<div class="gallery-rank">' +
+      '<span class="gallery-rank-label">Ranked by:</span>' +
+      renderRankButton('Cool Votes', 'upvotes', sort, by) +
+      '<span class="gallery-rank-sep">·</span>' +
+      renderRankButton('Hits', 'hits', sort, by) +
     '</div>';
 
   const grid = pages.length === 0
@@ -135,9 +153,9 @@ function renderGalleryContent({ pages, page, totalPages, sort, total, sotw }) {
       'AI Composer</a> and generate the first page.</p>'
     : '<div class="gallery-grid">' + pages.map(renderCard).join('') + '</div>';
 
-  const pagination = total === 0 ? '' : renderPagination({ page, totalPages, sort });
+  const pagination = total === 0 ? '' : renderPagination({ page, totalPages, sort, by });
 
-  return intro + sotwBox + sortToggle + grid + pagination;
+  return intro + sotwBox + sortToggle + rankToggle + grid + pagination;
 }
 
 function renderSiteOfTheWeek(p) {
@@ -169,12 +187,40 @@ function renderSiteOfTheWeek(p) {
   '</div>';
 }
 
-function renderSortButton(label, value, currentSort) {
+// Single builder for every gallery link, so the tabs and the pagination can
+// never disagree about which params survive a click. Defaults are omitted
+// rather than spelled out, keeping /gallery clean for the common case.
+function galleryUrl({ sort = 'recent', by = 'upvotes', page = 1 } = {}) {
+  const q = [];
+  if (sort !== 'recent') q.push('sort=' + encodeURIComponent(sort));
+  // `by` is meaningless on the chronological window, so it is never emitted there.
+  if (by === 'hits' && sort !== 'recent') q.push('by=hits');
+  if (page > 1) q.push('page=' + page);
+  return '/gallery' + (q.length ? '?' + q.join('&') : '');
+}
+
+// Window tabs. The chosen metric rides along, so switching from
+// "this week by hits" to "all time" keeps you on hits rather than silently
+// resetting to cool votes.
+function renderSortButton(label, value, currentSort, by) {
   const active = (value === currentSort);
-  const href = value === 'recent' ? '/gallery' : '/gallery?sort=' + value;
+  const href = galleryUrl({ sort: value, by });
   return '<a href="' + escapeAttr(href) + '" role="tab"' +
     ' aria-selected="' + (active ? 'true' : 'false') + '"' +
     ' class="gallery-sort-btn' + (active ? ' active' : '') + '">' +
+    escapeHtml(label) +
+    '</a>';
+}
+
+// Metric toggle. Changing the metric returns to page 1 on purpose: page 4 of
+// one ranking is not page 4 of another, and landing mid-list after a re-rank
+// reads as a bug.
+function renderRankButton(label, value, sort, currentBy) {
+  const active = (value === currentBy);
+  const href = galleryUrl({ sort, by: value });
+  return '<a href="' + escapeAttr(href) + '"' +
+    ' aria-current="' + (active ? 'true' : 'false') + '"' +
+    ' class="gallery-rank-btn' + (active ? ' active' : '') + '">' +
     escapeHtml(label) +
     '</a>';
 }
@@ -215,11 +261,10 @@ function renderCard(p) {
   '</div>';
 }
 
-function renderPagination({ page, totalPages, sort }) {
-  // 'recent' is the default, no need to carry it. The other two stick.
-  const sortParam = (sort === 'recent') ? '' : '&sort=' + sort;
-  const prevUrl = page > 1 ? '/gallery?page=' + (page - 1) + sortParam : null;
-  const nextUrl = page < totalPages ? '/gallery?page=' + (page + 1) + sortParam : null;
+function renderPagination({ page, totalPages, sort, by }) {
+  if (totalPages <= 1) return '';
+  const prevUrl = page > 1 ? galleryUrl({ sort, by, page: page - 1 }) : null;
+  const nextUrl = page < totalPages ? galleryUrl({ sort, by, page: page + 1 }) : null;
 
   return '<div class="gallery-pagination">' +
     (prevUrl
