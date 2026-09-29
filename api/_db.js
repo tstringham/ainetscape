@@ -1010,7 +1010,6 @@ export async function opsSnapshot() {
 // back in three months has forgotten the catalogue anyway.
 // ============================================================
 const PREMISE_USE_TTL_DAYS = 90;
-const MAX_TRACKED_PREMISES = 400;   // > catalogue size; a cap, not a policy
 
 export async function getUsedPremises(ipHash) {
   if (!ipHash) return [];
@@ -1028,7 +1027,12 @@ export async function recordUsedPremise(ipHash, label) {
     {
       // $addToSet keeps it idempotent — dispatching the same chip twice is
       // not an error and must not grow the array.
-      $addToSet: { used: { $each: [String(label).slice(0, 120)], $slice: -MAX_TRACKED_PREMISES } },
+      //
+      // No $slice here: it is a $push modifier and Mongo rejects the whole
+      // update if you pair it with $addToSet ("unexpected fields after $each").
+      // The array is naturally bounded anyway — it can never exceed the size
+      // of the catalogue, because every entry is a label drawn from it.
+      $addToSet: { used: String(label).slice(0, 120) },
       $set: { updated_at: new Date() }
     },
     { upsert: true }

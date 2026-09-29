@@ -33,7 +33,10 @@ function hashIp(ip) {
 
 export default async function handler(req, res) {
   const isWrite = req.method === 'POST';
-  if (req.method !== 'GET' && !isWrite) {
+  // HEAD is a read. Refusing it made a plain `curl -I` report Vercel's default
+  // cache header instead of this endpoint's no-store, which is a confusing
+  // thing for the next person to debug.
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !isWrite) {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ error: 'method_not_allowed' });
   }
