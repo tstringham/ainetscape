@@ -2835,16 +2835,55 @@ function sampleHelperChips(n) {
 
 // Tap dispatch: premise × random register × random aesthetic. Fresh pair each
 // tap; avoid immediately repeating the last (register, aesthetic) combination.
-let _lastRegAes = null;
+// How many recent registers to exclude. The register is the COSTUME — it is
+// what a gallery card actually looks like — so repeating one produces two
+// cards that read as the same page even when the premises are unrelated.
+// "THE MOSAIC FILE • 1997" and "THE SAAS FILES • 1997" were nine hours apart,
+// different premises, both "true-crime documentary".
+//
+// Sized against the list so a shorter list cannot starve the pool.
+const REGISTER_MEMORY_KEY = 'composer-recent-registers';
+function registerMemorySize(total) {
+  return Math.max(1, Math.min(5, total - 3));
+}
+function recentRegisters() {
+  try { const v = JSON.parse(ssGet(REGISTER_MEMORY_KEY) || '[]'); return Array.isArray(v) ? v : []; }
+  catch (_) { return []; }
+}
+function rememberRegister(reg, total) {
+  try {
+    const next = [reg, ...recentRegisters().filter((r) => r !== reg)]
+      .slice(0, registerMemorySize(total));
+    ssSet(REGISTER_MEMORY_KEY, JSON.stringify(next));
+  } catch (_) { /* private mode — variety degrades, nothing breaks */ }
+}
+let _lastAes = null;
 function dispatchBriefFor(premise) {
   const R = COMPOSER_CONFIG.registers, A = COMPOSER_CONFIG.aesthetics;
-  let reg, aes, key, guard = 0;
-  do {
-    reg = R[Math.floor(Math.random() * R.length)];
-    aes = A[Math.floor(Math.random() * A.length)];
-    key = reg + ' | ' + aes;
-  } while (key === _lastRegAes && ++guard < 12);
-  _lastRegAes = key;
+
+  // Draw the register from what has NOT been used recently, rather than
+  // drawing at random and rejecting one exact repeat.
+  //
+  // The old guard compared `register + aesthetic` against the single previous
+  // pick, held in a variable that reset on reload. With nine registers that
+  // let the same costume come up again immediately as long as the aesthetic
+  // differed, and across 58 real briefs it produced "a corporate press
+  // release" twelve times and "a solemn eulogy" ten — exactly what sampling
+  // nine options with no memory gives you.
+  //
+  // Excluding the recent ones guarantees a gap instead of hoping for one.
+  const recent = recentRegisters();
+  const fresh = R.filter((r) => !recent.includes(r));
+  const pool = fresh.length ? fresh : R;   // never empty, whatever the list size
+  const reg = pool[Math.floor(Math.random() * pool.length)];
+  rememberRegister(reg, R.length);
+
+  // The aesthetic is a lighter touch, so one step of memory is enough.
+  let aes = A[Math.floor(Math.random() * A.length)];
+  if (A.length > 1 && aes === _lastAes) {
+    aes = A[(A.indexOf(aes) + 1 + Math.floor(Math.random() * (A.length - 1))) % A.length];
+  }
+  _lastAes = aes;
   const art = (w) => /^[aeiou]/i.test(w) ? 'an' : 'a';   // "an" before vowel-initial
   return `${premise}, rendered as ${art(reg)} ${reg}, in ${art(aes)} ${aes} style.`;
 }
