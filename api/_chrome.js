@@ -44,16 +44,25 @@ const GALLERY_BODY_SCRIPT = `<script>
     btn.disabled = true;
     const countEl = document.querySelector('.vote-count[data-slug="' + slug + '"]');
     try {
+      // Pass the operator key through if this tab has one open. Same key the
+      // composer uses; sessionStorage is per-origin so it is already here.
+      const voteHeaders = { 'Content-Type': 'application/json' };
+      let opKey = null;
+      try { opKey = sessionStorage.getItem('op-key'); } catch (_) {}
+      if (opKey) voteHeaders['x-admin-token'] = opKey;
+
       const resp = await fetch('/api/vote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: voteHeaders,
         body: JSON.stringify({ slug: slug })
       });
       const j = await resp.json().catch(function () { return {}; });
       if (resp.ok && typeof j.upvotes === 'number' && countEl) {
         countEl.textContent = formatVoteCount(j.upvotes);
       }
-      btn.classList.add('voted');
+      // Operator seeding: leave the button live so it can be tapped again.
+      if (j && j.operator) { btn.disabled = false; }
+      else { btn.classList.add('voted'); }
       if (window.gtag) {
         try { gtag('event', j.already_voted ? 'gallery_upvote_dup' : 'gallery_upvote', { slug: slug }); } catch (_) {}
       }

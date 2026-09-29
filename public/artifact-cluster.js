@@ -55,17 +55,29 @@
       if (upvoteBtn.classList.contains('voted') || upvoteBtn.disabled) return;
       upvoteBtn.disabled = true;
       try {
+        // Carry the operator key when one is open in this tab. The server
+        // decides what it means; this only passes it along.
+        const voteHeaders = { 'Content-Type': 'application/json' };
+        const opKey = sessionSay('op-key');
+        if (opKey) voteHeaders['x-admin-token'] = opKey;
+
         const resp = await fetch('/api/vote', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: voteHeaders,
           body: JSON.stringify({ slug: slug })
         });
         const j = await resp.json().catch(function () { return {}; });
         if (resp.ok && typeof j.upvotes === 'number' && voteCount) {
           voteCount.textContent = formatCount(j.upvotes);
         }
-        upvoteBtn.classList.add('voted');
-        sessionMark(voteSessionKey);
+        // An operator is seeding, so the button stays live and unlocked —
+        // locking it after one tap is the whole thing being bypassed.
+        if (j && j.operator) {
+          upvoteBtn.disabled = false;
+        } else {
+          upvoteBtn.classList.add('voted');
+          sessionMark(voteSessionKey);
+        }
       } catch (_) {
         upvoteBtn.disabled = false;
       }
