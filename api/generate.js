@@ -61,12 +61,34 @@ const WATERFALL_DEADLINE_MS    = 255000;
 const MAX_TOKENS               = 8000;
 const MIN_BRIEF_LENGTH         = 3;
 const MAX_BRIEF_LENGTH         = 6000;
-// Per-IP burst/hour/day + global ceiling. Single-IP daily cap ≈ $5/day at
-// worst-case token usage.
+// Per-IP burst/hour/day + global ceiling.
+//
+// LAUNCH SHAPE. These were tuned for a site nobody had heard of: a generous
+// 40/day per visitor against a 200/hr site-wide ceiling. That is exactly
+// backwards for a launch. 200/hr is reached during any decent traffic peak,
+// and when it is, EVERY visitor gets "The exchange is at capacity" — the one
+// button that is the entire product, refusing, on the day it matters. Worse,
+// a handful of enthusiasts on 40/day each can spend that ceiling before the
+// first-timers arrive.
+//
+// So the two moved in opposite directions: the global ceiling up 6x, and the
+// per-visitor allowance down 8x. Same budget, spread across far more distinct
+// people. 5/day is still enough to generate, dislike it, and try again a few
+// times — which is the whole experience — while capping any one visitor at
+// roughly $0.63/day rather than $5.
+//
+// Worst case at 1200/hr is ~28,800 generations in 24h. That ceiling exists to
+// be a ceiling, not a forecast; real traffic peaks for a few hours, not
+// twenty-four. AI_KILL_SWITCH=1 stops all generation instantly with no
+// redeploy if it ever runs away.
+// Matches the daily cap on purpose: with 5/day as the real constraint, a
+// tighter per-minute burst limit can only fire BEFORE it, and the visitor it
+// punishes is the engaged one generating their allowance back to back. A
+// generation takes ~28s, so this never realistically binds.
 const RATE_LIMIT_PER_MIN       = 5;
-const GLOBAL_RATE_LIMIT_PER_HR = 200;
-const IP_LIMIT_PER_HOUR        = 20;
-const IP_LIMIT_PER_DAY         = 40;
+const GLOBAL_RATE_LIMIT_PER_HR = 1200;
+const IP_LIMIT_PER_HOUR        = 5;
+const IP_LIMIT_PER_DAY         = 5;
 
 // ============================================================
 // System prompt — assembled server-side. Never sent to the browser.
