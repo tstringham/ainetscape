@@ -27,6 +27,7 @@
 // send fails — see the error-handling block.
 
 import { getCallerIp, parseBody, rateLimit, rateLimitMessage } from './_shared.js';
+import { displayTitle } from './_title.js';
 
 const VALID_SLUG = /^[A-Za-z0-9]{6,20}$/;
 // Lightweight RFC5322-ish check. Resend will reject malformed addresses
@@ -105,7 +106,9 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'The mail server is offline.' });
   }
 
-  const pageTitle = recipient.page_title || 'AI Netscape page';
+  // Decoded before it reaches a subject line — an operator should not read
+  // "New message from your BEAD &amp; BONE page" in their inbox.
+  const pageTitle = displayTitle(recipient.page_title) || 'AI Netscape page';
   const pageUrl   = 'https://ainetscape.com/p/' + slug;
   const subject   = `New message from your ${pageTitle} page`;
 

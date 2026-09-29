@@ -1585,6 +1585,26 @@ function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (_) {} }
 function escapeHTML(s) {
   return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
+// Plain text out of raw <title> source.
+//
+// The regexes that feed this capture the ELEMENT'S SOURCE, so a `&amp;`
+// written by the model or by a saved file arrives encoded — the same bug that
+// put "BEAD &amp; BONE" on a gallery card. DOMParser returns the rendered
+// text without innerHTML and without running anything.
+//
+// Mirrors cleanTitle() in api/_title.js. Kept as its own small copy rather
+// than shared, because this file ships to the browser as one standalone
+// document with no module loader.
+function cleanTitleText(raw) {
+  const str = String(raw == null ? '' : raw);
+  try {
+    const doc = new DOMParser().parseFromString(str, 'text/html');
+    return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+  } catch (_) {
+    return str.replace(/\s+/g, ' ').trim();
+  }
+}
+
 function escapeAttr(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -1929,7 +1949,7 @@ function openDoc() {
     r.onload = () => {
       const txt = r.result;
       const t = /<title>([\s\S]*?)<\/title>/i.exec(txt);
-      if (t) docTitle = t[1].trim();
+      if (t) docTitle = cleanTitleText(t[1]);
       // A full document → iframe sandbox (preserves its CSS / layout).
       // A body fragment → contentEditable.
       if (/<!doctype html|<html\b/i.test(txt)) {
@@ -3390,7 +3410,7 @@ function renderBuild(htmlText, originalBrief, bypassed) {
     editor.innerHTML = html;
   } else {
     const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
-    if (titleMatch) docTitle = (titleMatch[1].trim().slice(0, 80)) || 'Untitled';
+    if (titleMatch) docTitle = cleanTitleText(titleMatch[1]).slice(0, 80) || 'Untitled';
     currentDocHTML = html;
     renderGeneratedIntoIframe(html);
   }

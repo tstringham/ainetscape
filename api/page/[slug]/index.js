@@ -13,6 +13,7 @@
 import { getCallerIp, rateLimit } from '../../_shared.js';
 import { renderChrome, escapeAttr } from '../../_chrome.js';
 import { buildDescription } from '../../_indexable.js';
+import { displayTitle } from '../../_title.js';
 import { injectResponsiveGuard } from '../../_responsive_guard.js';
 
 const VALID_SLUG = /^[A-Za-z0-9]{6,20}$/;
@@ -115,7 +116,13 @@ export default async function handler(req, res) {
 export function decorate(html, slug, doc) {
   const shareUrl = 'https://ainetscape.com/p/' + slug;
   const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
-  const pageTitle = (doc && doc.page_title) || (titleMatch && titleMatch[1].trim()) || 'A page made on AI Netscape';
+  // displayTitle on both branches: the stored value may predate the capture
+  // fix, and the titleMatch fallback reads raw <title> source, which is
+  // encoded by definition. One decode here feeds the wrapper <title>,
+  // og:title, twitter:title, the iframe label and the status bar — each of
+  // which escapes exactly once on output.
+  const pageTitle = displayTitle((doc && doc.page_title) || (titleMatch && titleMatch[1]))
+    || 'A page made on AI Netscape';
   const safeTitle = escapeAttr(pageTitle.slice(0, 120));
 
   // OG image = this page's own stored thumbnail, served from /api/thumb.

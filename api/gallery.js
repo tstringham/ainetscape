@@ -27,6 +27,7 @@
 // the `thumbnail_url` field.
 
 import { renderChrome, escapeHtml, escapeAttr } from './_chrome.js';
+import { displayTitle } from './_title.js';
 
 const PAGE_SIZE = 24;
 const SITE_ORIGIN = 'https://ainetscape.com';
@@ -160,7 +161,9 @@ function renderGalleryContent({ pages, page, totalPages, sort, by, total, sotw }
 
 function renderSiteOfTheWeek(p) {
   const slug = String(p.share_slug || '');
-  const title = String(p.page_title || 'Untitled');
+  // Decoded on the way out so rows written before the capture fix render
+  // correctly with no migration. escapeHtml below still escapes once.
+  const title = displayTitle(p.page_title) || 'Untitled';
   const upvotes = formatCount(p.upvotes);
   const hits = formatCount(p.hits);
   const date = formatGalleryDate(p.ts);
@@ -227,7 +230,9 @@ function renderRankButton(label, value, sort, currentBy) {
 
 function renderCard(p) {
   const slug = String(p.share_slug || '');
-  const title = String(p.page_title || 'Untitled');
+  // Decoded on the way out so rows written before the capture fix render
+  // correctly with no migration. escapeHtml below still escapes once.
+  const title = displayTitle(p.page_title) || 'Untitled';
   const upvotes = Number(p.upvotes) || 0;
   const hits = formatCount(p.hits);
   const date = formatGalleryDate(p.ts);
