@@ -78,12 +78,15 @@ export default async function handler(req, res) {
     // number returned already includes this view. A separate read after
     // the write would race and show the new visitor N-1.
     let stats = null;
+    let skipped = rl.allowed ? null : 'rate-limited';
     if (rl.allowed) {
       try {
         stats = await incrementHit(slug);
+        if (!stats) skipped = 'not-incrementable';
       } catch (err) {
         // A Mongo blip on the increment must not cost the caller their
         // counts — fall through to the read below.
+        skipped = 'error';
         console.error('Hit increment failed for slug=' + slug + ':', err && (err.message || err));
       }
     }
@@ -96,6 +99,22 @@ export default async function handler(req, res) {
     if (!stats) {
       return res.status(404).json({ error: 'Not found.' });
     }
+
+    // Say whether this request actually COUNTED.
+    //
+    // Four paths return 200 with a perfectly plausible number and no
+    // increment: over the per-IP write allowance, a page that is hidden or
+    // not AI-authored, a Mongo error on the write, or a client that never
+    // called at all. Every one of them is invisible from outside, which makes
+    // "hits stopped registering" unanswerable without a function log — and
+    // the rate-limited path used to be a 429, so it was visible until it was
+    // deliberately made silent in d9abce3.
+    //
+    // A header costs nothing, changes no behaviour, and turns the question
+    // into one curl:
+    //   curl -sI .../stats | grep -i x-hit
+    res.setHeader('X-Hit-Counted', skipped ? 'no' : 'yes');
+    if (skipped) res.setHeader('X-Hit-Skipped', skipped);
 
     return res.status(200).json({
       upvotes: stats.upvotes || 0,
