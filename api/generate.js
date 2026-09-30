@@ -177,7 +177,7 @@ COPYRIGHT + DATES (in-character):
 DESIGN RULES (non-negotiable):
 - Commit to a strong aesthetic direction within the first paragraph of CSS. Options include: editorial magazine, refined Swiss minimalism, neo-brutalism, art-deco luxury, terminal/monospace, neo-grotesque maximalism, organic/painterly. Pick ONE and execute it with conviction.
 - Typography is the first impression. Pair a distinctive display face with a refined body face from Google Fonts. Never use Inter, Roboto, Arial, or system-ui as the primary face. Strong pairings: Fraunces + Inter Tight; Instrument Serif + a refined sans; Space Grotesk + IBM Plex Mono; PP Editorial-style serifs; Bricolage Grotesque.
-- Color: commit to a dominant palette. No purple-to-pink gradients on white. No "AI startup" sapphire-on-cloud.
+- Color (non-negotiable, and the most common failure): COMMIT TO A COLOUR. The background must be a deliberate, saturated or mid-tone field — ochre, oxblood, forest, slate blue, terracotta, sage, dusty rose, teal, mustard, aubergine, sand. Plain white and near-black are ALLOWED ONLY when the brief or register genuinely calls for them (a legal notice, a terminal, a eulogy). They are not the default and they are not a safe choice. Every rule below says what to avoid; this one says what to DO, because a page that avoids every mistake and commits to nothing is the most common thing you produce and the least interesting. Still no purple-to-pink gradients on white, and no "AI startup" sapphire-on-cloud.
 - Layout: avoid hero-features-CTA cookie-cutter structure unless the brief explicitly demands it. Use asymmetry, generous negative space, deliberate overlap, type as visual element.
 - Real content: write actual copy that fits the brief. No "Lorem ipsum." Invent plausible names, quotes, details, prices.
 - Subtle motion: one tasteful page-load reveal, hover states on interactive elements. No carousels.
@@ -221,6 +221,48 @@ function injectCtaDispatch(html, slug) {
   } catch (_) {
     return html;
   }
+}
+
+// ============================================================
+// Per-request design seed.
+//
+// WHY THIS EXISTS. 187 published pages measured: 0 had a mid-tone background.
+// Every one was near-white or near-black. The variety machinery only reached a
+// third of them — the register and aesthetic are chosen client-side and ride
+// along on a CHIP dispatch, so the 66% of pages generated from a typed brief
+// got no steering at all and the model fell back to its house style every time.
+//
+// This moves the dice server-side, so every generation is steered whatever
+// path it arrived by. It is appended to the system prompt rather than the
+// brief, because it is a direction to the designer, not part of what the
+// visitor asked for.
+//
+// Deliberately a nudge, not a command: the brief always wins. A eulogy that
+// needs to be black should be black, and the wording below says so.
+const PALETTES = [
+  'deep ochre and cream', 'oxblood and bone', 'forest green and pale gold',
+  'slate blue and warm grey', 'terracotta and off-white', 'sage and charcoal',
+  'dusty rose and deep plum', 'teal and sand', 'mustard and ink',
+  'aubergine and blush', 'rust and denim', 'olive and parchment',
+  'navy and copper', 'burgundy and oat', 'moss and clay',
+  'cobalt and buttermilk', 'sienna and slate', 'plum and pistachio'
+];
+const DIRECTIONS = [
+  'editorial magazine', 'refined Swiss minimalism', 'neo-brutalism',
+  'art-deco luxury', 'terminal/monospace', 'neo-grotesque maximalism',
+  'organic/painterly', 'psychedelic poster', 'Memphis Group geometry',
+  'constructivist poster', 'mid-century travel advert', 'zine photocopy',
+  'technical manual', 'botanical plate', 'sports programme'
+];
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+
+function designSeed() {
+  return '\n\nTHIS PAGE (a seed, so that no two pages arrive looking alike — the brief '
+    + 'overrides any of it where they genuinely conflict):\n'
+    + '- Direction: ' + pick(DIRECTIONS) + '.\n'
+    + '- Palette: ' + pick(PALETTES) + '. Use it on the BACKGROUND, not just on accents.\n'
+    + '- If this seed fights the brief, follow the brief. If it merely feels '
+    + 'unfamiliar, follow the seed — unfamiliar is the point.';
 }
 
 // ============================================================
@@ -379,7 +421,8 @@ export default async function handler(req, res) {
     for (let attempt = 1; attempt <= MAX_DEDUP_ATTEMPTS + 1; attempt++) {
       const wf = await runWaterfall({
         order: runnable,
-        systemPrompt: SYSTEM_PROMPT,
+        // Seeded per request, so a typed brief varies as much as a chip does.
+        systemPrompt: SYSTEM_PROMPT + designSeed(),
         userContent: 'Brief:\n\n' + brief,
         maxTokens: MAX_TOKENS,
         perRungTimeoutMs: PER_RUNG_TIMEOUT_MS,
