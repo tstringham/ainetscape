@@ -414,6 +414,50 @@ export function renderChrome({ title, content, statusText = 'Document: Done', he
     cursor: default;
   }
 
+  /* Operator Console — Win95 chrome, reusing the shared bevel vars. Scoped
+     under op- so it cannot collide with the homepage's own dialog styles. */
+  .op-backdrop {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "MS Sans Serif", Tahoma, sans-serif;
+  }
+  .op-backdrop[hidden] { display: none; }
+  .op-dialog {
+    width: min(420px, calc(100vw - 32px));
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.35);
+  }
+  .op-titlebar {
+    height: 20px; display: flex; align-items: center;
+    background: #000080; color: #fff;
+    font-size: 11px; font-weight: bold; padding: 0 6px;
+  }
+  .op-body { padding: 12px; }
+  .op-note { font-size: 11px; margin-bottom: 10px; color: #000; }
+  .op-row { display: flex; align-items: center; gap: 8px; }
+  .op-row label { font-size: 11px; white-space: nowrap; }
+  .op-row input {
+    flex: 1; min-width: 0; font-family: inherit; font-size: 11px; padding: 3px 4px;
+    border: 2px solid; border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk);
+    background: #fff;
+  }
+  .op-status { margin-top: 8px; font-size: 11px; color: #333; }
+  .op-footer {
+    display: flex; gap: 6px; justify-content: flex-end;
+    padding: 0 12px 12px;
+  }
+  .op-btn {
+    font-family: inherit; font-size: 11px; padding: 4px 14px;
+    background: var(--face); color: #000; cursor: pointer;
+    border: 2px solid; border-color: var(--hi) var(--sh-dk) var(--sh-dk) var(--hi);
+  }
+  .op-btn:hover { background: var(--face-lt); }
+  .op-btn:active { border-color: var(--sh-dk) var(--hi) var(--hi) var(--sh-dk); }
+  .op-default { font-weight: bold; }
+
   /* ---- Card grid: tighter density (1997 directory) ---- */
   .gallery-grid {
     display: grid;
@@ -773,6 +817,76 @@ ${headExtra}
   </div>
 </div>
 ${afterWindow}
+
+<!-- Operator Console.
+     Lived only on the homepage, which is the one page where seeding a vote is
+     impossible — the buttons are on the gallery and on /p/<slug>. Opening the
+     line meant visiting the homepage first and relying on sessionStorage
+     surviving the trip. It is in the shared chrome now, so every page that has
+     an upvote button can also open the line.
+
+     Double-click the status-bar clock. Control+Alt+O is NOT used here: on
+     macOS Option+O is a dead key that emits ø, so e.code never arrives and the
+     shortcut silently does nothing — which is exactly how this was reported.
+     The clock is a plain text node with no other listener, so the gesture
+     cannot collide with anything. -->
+<div class="op-backdrop" id="op-backdrop" hidden>
+  <div class="op-dialog" role="dialog" aria-modal="true" aria-label="Operator Console">
+    <div class="op-titlebar"><span>Operator Console</span></div>
+    <div class="op-body">
+      <div class="op-note">Priority line for the switchboard operator. Enter your
+        operator key to open the line for this session.</div>
+      <div class="op-row">
+        <label for="op-key-input">Operator key:</label>
+        <input type="password" id="op-key-input" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="op-status" id="op-status">Line is closed.</div>
+    </div>
+    <div class="op-footer">
+      <button type="button" class="op-btn op-default" id="op-open">Open line</button>
+      <button type="button" class="op-btn" id="op-close">Close line</button>
+      <button type="button" class="op-btn" id="op-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    var KEY = 'op-key';
+    var back = document.getElementById('op-backdrop');
+    var clock = document.getElementById('status-clock');
+    if (!back || !clock) return;
+    var input = document.getElementById('op-key-input');
+    var status = document.getElementById('op-status');
+    function read() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
+    function refresh() {
+      status.textContent = read() ? 'Line is OPEN for this session.' : 'Line is closed.';
+    }
+    function open() {
+      input.value = read() || '';
+      refresh();
+      back.hidden = false;
+      input.focus();
+      var sel = window.getSelection && window.getSelection();
+      if (sel && sel.removeAllRanges) sel.removeAllRanges();
+    }
+    function close() { back.hidden = true; }
+    clock.addEventListener('dblclick', open);
+    document.getElementById('op-open').addEventListener('click', function () {
+      var v = (input.value || '').trim();
+      try { if (v) sessionStorage.setItem(KEY, v); else sessionStorage.removeItem(KEY); } catch (e) {}
+      refresh();
+      close();
+    });
+    document.getElementById('op-close').addEventListener('click', function () {
+      try { sessionStorage.removeItem(KEY); } catch (e) {}
+      refresh();
+    });
+    document.getElementById('op-cancel').addEventListener('click', close);
+    back.addEventListener('click', function (e) { if (e.target === back) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !back.hidden) close(); });
+    refresh();
+  })();
+</script>
 <script>
   // Status clock — IIFE so a missing element can't take down the rest
   // of the inline script (e.g. the upvote handler). Cached element ref
