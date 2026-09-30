@@ -89,10 +89,22 @@ export default async function handler(req, res) {
      *
      * The generated CONTENT is immutable. This wrapper is not -- its markup,
      * its meta tags and the scripts it loads all change when we deploy. So the
-     * CDN keeps a day's copy and is purged on deploy, while the browser spends
-     * a conditional request and usually gets a 304.
+     * CDN keeps a copy and is purged on deploy, while the browser spends a
+     * conditional request and usually gets a 304.
+     *
+     * s-maxage was 86400 on the reasoning that stored HTML only changes on
+     * deploy. That is false: scripts/update-page-body.mjs and
+     * api/admin/edit-page.js both rewrite body_html with no deploy at all, and
+     * the edit then sat behind a day-old edge entry -- invisible, while Mongo
+     * read correct and every check of the URL re-warmed the stale copy.
+     *
+     * 300 + stale-while-revalidate=86400 keeps the edge absorbing effectively
+     * all traffic (a stale hit is served instantly and revalidated behind the
+     * request, so nobody waits) while capping an unannounced edit's invisible
+     * window at five minutes. Origin load is one request per five minutes per
+     * page that is ACTUALLY being requested -- not per page in the gallery.
        */
-    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=86400, stale-while-revalidate=3600');
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400');
     return res.status(200).send(html);
   } catch (err) {
     console.error('Page lookup failed:', err);
