@@ -89,10 +89,22 @@ export default async function handler(req, res) {
      *
      * The generated CONTENT is immutable. This wrapper is not -- its markup,
      * its meta tags and the scripts it loads all change when we deploy. So the
-     * CDN keeps a day's copy and is purged on deploy, while the browser spends
-     * a conditional request and usually gets a 304.
+     * CDN keeps a copy and is purged on deploy, while the browser spends a
+     * conditional request and usually gets a 304.
+     *
+     * s-maxage was 86400 on the reasoning that stored HTML only changes on
+     * deploy. That is false: scripts/update-page-body.mjs and
+     * api/admin/edit-page.js both rewrite body_html with no deploy at all, and
+     * the edit then sat behind a day-old edge entry -- invisible, while Mongo
+     * read correct and every check of the URL re-warmed the stale copy.
+     *
+     * 300 + stale-while-revalidate=86400 keeps the edge absorbing effectively
+     * all traffic (a stale hit is served instantly and revalidated behind the
+     * request, so nobody waits) while capping an unannounced edit's invisible
+     * window at five minutes. Origin load is one request per five minutes per
+     * page that is ACTUALLY being requested -- not per page in the gallery.
        */
-    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=86400, stale-while-revalidate=3600');
+    res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400');
     return res.status(200).send(html);
   } catch (err) {
     console.error('Page lookup failed:', err);
@@ -113,6 +125,18 @@ export default async function handler(req, res) {
 // chrome. Engagement actions + mute + nav move onto the status bar. OG tags
 // go on the OUTER document head so social crawlers still get a card.
 // ============================================================
+// Cache key for the framed document. Any field that moves when body_html
+// moves will do; body_updated_at is set by the edit tools, completed_at by
+// generation, and ts is on every row ever written. Returns '' rather than a
+// bogus stamp if somehow none resolve -- a missing param is a stale frame for
+// s-maxage, while a changing-but-meaningless one would be a cache miss on
+// every single request.
+function bodyVersionQuery(doc) {
+  const stamp = doc && (doc.body_updated_at || doc.completed_at || doc.ts);
+  const ms = stamp ? +new Date(stamp) : NaN;
+  return Number.isFinite(ms) ? '?v=' + ms : '';
+}
+
 export function decorate(html, slug, doc) {
   const shareUrl = 'https://ainetscape.com/p/' + slug;
   const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
@@ -197,8 +221,20 @@ export function decorate(html, slug, doc) {
      * that is the whole reason /p/<slug>/raw exists. The sandbox is unchanged
      * and still omits allow-same-origin, and `raw` sends a CSP sandbox header
      * so the isolation holds even if someone opens the URL directly.
+     *
+     * ?v carries the body's own version, the same trick /api/thumb needed for
+     * the same reason (see thumbSrc above). Edit a page with
+     * update-page-body.mjs or admin/edit-page and this URL changes, so the CDN
+     * cannot have an entry for it and the edit is live on the next request.
+     * Without it the iframe asks for one fixed URL forever and an edit sits
+     * behind whatever the edge already stored -- correct in Mongo, correct when
+     * rendered, and invisible to every visitor.
+     *
+     * body_updated_at exists only on edited rows, so fall back through
+     * completed_at to ts, which every row has. The value only has to CHANGE
+     * when the body changes; it does not have to mean anything.
      */
-    'src="/p/' + encodeURIComponent(slug) + '/raw"></iframe>';
+    'src="/p/' + encodeURIComponent(slug) + '/raw' + bodyVersionQuery(doc) + '"></iframe>';
 
   const statusExtra = isArtifact ? artifactStatus(slug) : platformStatus();
   const scripts = isArtifact

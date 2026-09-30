@@ -77,12 +77,18 @@ export default async function handler(req, res) {
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Content-Security-Policy', SANDBOX);
-  // Same policy as the framed page: the CDN holds a day and is purged on
-  // deploy, the browser revalidates. prepareDocument rewrites this document
-  // at render -- it strips the model's form handlers and injects the
-  // dispatcher -- so what it returns changes when we deploy, even though the
-  // stored HTML behind it does not.
-  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=86400, stale-while-revalidate=3600');
+  // Same policy as the framed page. prepareDocument rewrites this document at
+  // render -- it strips the model's form handlers and injects the dispatcher --
+  // so what it returns changes when we deploy, even though the stored HTML
+  // behind it does not.
+  //
+  // But the stored HTML DOES change without a deploy (update-page-body.mjs,
+  // admin/edit-page.js), and this is the document that matters: the shell's
+  // iframe requests it with no query string, so the "verify with ?v=" habit
+  // checks a different cache key and reports a fix that no visitor can see.
+  // Five minutes plus a day of stale-while-revalidate: same edge hit rate,
+  // bounded blind spot.
+  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400');
   // Belt and braces: this document is meant to be framed by us and crawled,
   // never embedded elsewhere.
   res.setHeader('X-Robots-Tag', 'index, follow');
