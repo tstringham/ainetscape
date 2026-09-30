@@ -590,6 +590,17 @@ export function renderChrome({ title, content, statusText = 'Document: Done', he
     display: flex; align-items: center;
   }
   .status-pane.flex { flex: 1; }
+  /* display:flex on .status-pane beats the UA's [hidden]{display:none}, so a
+     hidden pane still rendered. The attribute said hidden and the pixels said
+     otherwise -- caught only by measuring the box, not by reading .hidden. */
+  .status-pane[hidden] { display: none; }
+  /* See public/index.html: the operator key is per-tab sessionStorage, so a
+     key that never stored and a working one were indistinguishable until a
+     request hit a cap and blamed the rate limiter. */
+  .status-pane#op-indicator {
+    color: #004000; font-weight: bold; letter-spacing: .08em;
+    background: #9ad19a;
+  }
   .status-modem {
     background: var(--face); border: 1px solid;
     border-color: var(--sh) var(--hi) var(--hi) var(--sh);
@@ -813,6 +824,7 @@ ${headExtra}
   <div class="statusbar">
     <div class="status-pane flex">${escapeHtml(statusText)}</div>
     ${_statusRight}
+    <div class="status-pane" id="op-indicator" hidden title="Operator line is open for this tab">OPERATOR</div>
     <div class="status-pane" id="status-clock">--:--</div>
   </div>
 </div>
@@ -859,7 +871,10 @@ ${afterWindow}
     var status = document.getElementById('op-status');
     function read() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
     function refresh() {
-      status.textContent = read() ? 'Line is OPEN for this session.' : 'Line is closed.';
+      var open = !!read();
+      status.textContent = open ? 'Line is OPEN for this session.' : 'Line is closed.';
+      var ind = document.getElementById('op-indicator');
+      if (ind) ind.hidden = !open;
     }
     function open() {
       input.value = read() || '';
