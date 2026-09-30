@@ -28,6 +28,7 @@
 
 import fs from 'fs';
 import { MongoClient } from 'mongodb';
+import { cleanTitle } from '../api/_title.js';
 
 const [, , slug, htmlPath] = process.argv;
 
@@ -42,8 +43,13 @@ if (!process.env.MONGODB_URI) {
 }
 
 const html = fs.readFileSync(htmlPath, 'utf8');
+// Same normalisation generate.js applies at capture. Without it this tool is a
+// side door around it: a title written here as `Records &amp; Disclosure` was
+// stored with the entity intact, which is the exact shape cleanTitle exists to
+// prevent. Titles are plain text in the database; decode once, here, not at
+// every surface that reads them.
 const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
-const pageTitle = titleMatch ? titleMatch[1].trim() : null;
+const pageTitle = titleMatch ? cleanTitle(titleMatch[1]) : null;
 
 const dbName = process.env.MONGODB_DB || 'ainetscape';
 const client = new MongoClient(process.env.MONGODB_URI, { maxPoolSize: 2 });
@@ -79,14 +85,15 @@ try {
   if (pageTitle) console.log(`  title=${pageTitle}`);
   console.log('');
   console.log('');
-  console.log('Mongo is updated. The Vercel edge is NOT -- both /p/<slug> and');
-  console.log('/p/<slug>/raw are cached for up to 24h and the iframe requests');
-  console.log('/raw with no query string, so a ?v= check proves nothing.');
+  console.log('The framed URL carries body_updated_at, which this write just');
+  console.log('moved, so the edge has no entry for the new URL and the change');
+  console.log('is live as soon as the shell revalidates -- five minutes at the');
+  console.log('outside, usually the next request.');
   console.log('');
-  console.log('Check what visitors get:');
-  console.log(`  curl -sI "https://ainetscape.com/p/${slug}/raw" | grep -i "x-vercel-cache\\|age"`);
-  console.log('A HIT with a non-zero age is the old copy. Purge the edge cache');
-  console.log('or deploy to make the change visible.');
+  console.log('Check what visitors get (bare URL, no ?v= -- a cache-buster is a');
+  console.log('different cache key and would tell you nothing):');
+  console.log(`  curl -s https://ainetscape.com/p/${slug} | grep -o 'raw?v=[0-9]*'`);
+  console.log('That stamp should match the write above.');
 } finally {
   await client.close();
 }
