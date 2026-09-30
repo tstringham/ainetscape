@@ -125,6 +125,18 @@ export default async function handler(req, res) {
 // chrome. Engagement actions + mute + nav move onto the status bar. OG tags
 // go on the OUTER document head so social crawlers still get a card.
 // ============================================================
+// Cache key for the framed document. Any field that moves when body_html
+// moves will do; body_updated_at is set by the edit tools, completed_at by
+// generation, and ts is on every row ever written. Returns '' rather than a
+// bogus stamp if somehow none resolve -- a missing param is a stale frame for
+// s-maxage, while a changing-but-meaningless one would be a cache miss on
+// every single request.
+function bodyVersionQuery(doc) {
+  const stamp = doc && (doc.body_updated_at || doc.completed_at || doc.ts);
+  const ms = stamp ? +new Date(stamp) : NaN;
+  return Number.isFinite(ms) ? '?v=' + ms : '';
+}
+
 export function decorate(html, slug, doc) {
   const shareUrl = 'https://ainetscape.com/p/' + slug;
   const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(html);
@@ -209,8 +221,20 @@ export function decorate(html, slug, doc) {
      * that is the whole reason /p/<slug>/raw exists. The sandbox is unchanged
      * and still omits allow-same-origin, and `raw` sends a CSP sandbox header
      * so the isolation holds even if someone opens the URL directly.
+     *
+     * ?v carries the body's own version, the same trick /api/thumb needed for
+     * the same reason (see thumbSrc above). Edit a page with
+     * update-page-body.mjs or admin/edit-page and this URL changes, so the CDN
+     * cannot have an entry for it and the edit is live on the next request.
+     * Without it the iframe asks for one fixed URL forever and an edit sits
+     * behind whatever the edge already stored -- correct in Mongo, correct when
+     * rendered, and invisible to every visitor.
+     *
+     * body_updated_at exists only on edited rows, so fall back through
+     * completed_at to ts, which every row has. The value only has to CHANGE
+     * when the body changes; it does not have to mean anything.
      */
-    'src="/p/' + encodeURIComponent(slug) + '/raw"></iframe>';
+    'src="/p/' + encodeURIComponent(slug) + '/raw' + bodyVersionQuery(doc) + '"></iframe>';
 
   const statusExtra = isArtifact ? artifactStatus(slug) : platformStatus();
   const scripts = isArtifact
