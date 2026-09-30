@@ -9,9 +9,22 @@
 //   node --env-file=.env.production.local scripts/update-page-body.mjs <slug> <html-file>
 //
 // After updating, the page is still cached at the Vercel edge for up to
-// 24h (Cache-Control: s-maxage=86400, immutable). Append a cache-busting
-// query string (e.g. ?v=2) when verifying, or purge the edge cache from
-// the Vercel dashboard if you want everyone to see the change now.
+// 24h (s-maxage=86400). There are TWO cached documents, not one:
+//
+//   /p/<slug>       the Netscape chrome shell
+//   /p/<slug>/raw   the generated page, loaded into the shell's iframe
+//
+// The iframe requests /raw with NO query string, so "verify with ?v=..."
+// checks a URL no visitor ever hits: it is a different cache key, so it
+// misses, re-renders from Mongo and looks correct while every real visitor
+// is still served the old bytes. Worse, a diagnostic curl of the bare URL
+// re-warms the stale entry for another 24h -- that is how an edit made at
+// 08:50 was still invisible behind an entry cached at 08:32.
+//
+// To actually verify: curl the BARE urls and read x-vercel-cache / age.
+// HIT with a large age means you are reading the cache, not your change.
+// To ship it to everyone: purge the edge cache (Vercel dashboard ->
+// project -> Data Cache / purge), or deploy, which invalidates it.
 
 import fs from 'fs';
 import { MongoClient } from 'mongodb';
@@ -65,8 +78,15 @@ try {
   console.log(`  old size=${existing.body_size_bytes || '?'} bytes → new size=${html.length} bytes`);
   if (pageTitle) console.log(`  title=${pageTitle}`);
   console.log('');
-  console.log('Edge cache may still serve the old HTML for up to 24h.');
-  console.log(`Verify with: curl -s "https://ainetscape.com/p/${slug}?v=$(date +%s)" | head`);
+  console.log('');
+  console.log('Mongo is updated. The Vercel edge is NOT -- both /p/<slug> and');
+  console.log('/p/<slug>/raw are cached for up to 24h and the iframe requests');
+  console.log('/raw with no query string, so a ?v= check proves nothing.');
+  console.log('');
+  console.log('Check what visitors get:');
+  console.log(`  curl -sI "https://ainetscape.com/p/${slug}/raw" | grep -i "x-vercel-cache\\|age"`);
+  console.log('A HIT with a non-zero age is the old copy. Purge the edge cache');
+  console.log('or deploy to make the change visible.');
 } finally {
   await client.close();
 }
