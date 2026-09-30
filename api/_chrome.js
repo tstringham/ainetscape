@@ -871,6 +871,16 @@ ${afterWindow}
     }
     function close() { back.hidden = true; }
     clock.addEventListener('dblclick', open);
+    // Same URL trigger as the homepage: #operator, stripped once consumed.
+    // The clock pane is small enough that a missed double-click and a broken
+    // listener are indistinguishable, and a hash cannot be missed.
+    function fromHash() {
+      if ((location.hash || '').toLowerCase() !== '#operator') return;
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+      open();
+    }
+    window.addEventListener('hashchange', fromHash);
+    fromHash();
     document.getElementById('op-open').addEventListener('click', function () {
       var v = (input.value || '').trim();
       try { if (v) sessionStorage.setItem(KEY, v); else sessionStorage.removeItem(KEY); } catch (e) {}

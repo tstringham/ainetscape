@@ -3828,6 +3828,25 @@ document.addEventListener('keydown', function (e) {
     openOperatorDialog();
   });
 })();
+// URL trigger. The clock is a ~40px pane wedged against the "upgrade to 56k?"
+// link, so a double-click that drifts by a few pixels lands on a neighbour and
+// nothing happens -- and nothing happening is exactly what a missing listener
+// looks like, so there is no way to tell a miss from a break. #operator cannot
+// be mis-aimed, survives a reload, works on a phone where dblclick barely
+// exists, and can be bookmarked.
+//
+// The hash is stripped once consumed so the address bar does not advertise it
+// and a copied URL is an ordinary link. It is not a secret either way: the
+// dialog only collects the key, and the server is what validates it.
+(function wireOperatorHashTrigger() {
+  function consume() {
+    if ((location.hash || '').toLowerCase() !== '#operator') return;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+    openOperatorDialog();
+  }
+  window.addEventListener('hashchange', consume);
+  consume();
+})();
 (function wireOperatorConsole() {
   const openBtn = document.getElementById('operator-open');
   const closeBtn = document.getElementById('operator-close');
